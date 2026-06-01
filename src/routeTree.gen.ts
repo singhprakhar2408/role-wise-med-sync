@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as StaffRequestsRouteImport } from './routes/staff-requests'
+import { Route as DoctorRouteImport } from './routes/doctor'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CompounderRouteImport } from './routes/compounder'
 import { Route as AccessRouteImport } from './routes/access'
@@ -18,6 +19,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const StaffRequestsRoute = StaffRequestsRouteImport.update({
   id: '/staff-requests',
   path: '/staff-requests',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DoctorRoute = DoctorRouteImport.update({
+  id: '/doctor',
+  path: '/doctor',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -46,6 +52,7 @@ export interface FileRoutesByFullPath {
   '/access': typeof AccessRoute
   '/compounder': typeof CompounderRoute
   '/dashboard': typeof DashboardRoute
+  '/doctor': typeof DoctorRoute
   '/staff-requests': typeof StaffRequestsRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/access': typeof AccessRoute
   '/compounder': typeof CompounderRoute
   '/dashboard': typeof DashboardRoute
+  '/doctor': typeof DoctorRoute
   '/staff-requests': typeof StaffRequestsRoute
 }
 export interface FileRoutesById {
@@ -61,19 +69,33 @@ export interface FileRoutesById {
   '/access': typeof AccessRoute
   '/compounder': typeof CompounderRoute
   '/dashboard': typeof DashboardRoute
+  '/doctor': typeof DoctorRoute
   '/staff-requests': typeof StaffRequestsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/access' | '/compounder' | '/dashboard' | '/staff-requests'
+  fullPaths:
+    | '/'
+    | '/access'
+    | '/compounder'
+    | '/dashboard'
+    | '/doctor'
+    | '/staff-requests'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/access' | '/compounder' | '/dashboard' | '/staff-requests'
+  to:
+    | '/'
+    | '/access'
+    | '/compounder'
+    | '/dashboard'
+    | '/doctor'
+    | '/staff-requests'
   id:
     | '__root__'
     | '/'
     | '/access'
     | '/compounder'
     | '/dashboard'
+    | '/doctor'
     | '/staff-requests'
   fileRoutesById: FileRoutesById
 }
@@ -82,6 +104,7 @@ export interface RootRouteChildren {
   AccessRoute: typeof AccessRoute
   CompounderRoute: typeof CompounderRoute
   DashboardRoute: typeof DashboardRoute
+  DoctorRoute: typeof DoctorRoute
   StaffRequestsRoute: typeof StaffRequestsRoute
 }
 
@@ -92,6 +115,13 @@ declare module '@tanstack/react-router' {
       path: '/staff-requests'
       fullPath: '/staff-requests'
       preLoaderRoute: typeof StaffRequestsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/doctor': {
+      id: '/doctor'
+      path: '/doctor'
+      fullPath: '/doctor'
+      preLoaderRoute: typeof DoctorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -130,6 +160,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccessRoute: AccessRoute,
   CompounderRoute: CompounderRoute,
   DashboardRoute: DashboardRoute,
+  DoctorRoute: DoctorRoute,
   StaffRequestsRoute: StaffRequestsRoute,
 }
 export const routeTree = rootRouteImport
