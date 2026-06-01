@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as StaffRequestsRouteImport } from './routes/staff-requests'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as CompounderRouteImport } from './routes/compounder'
 import { Route as AccessRouteImport } from './routes/access'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -22,6 +23,11 @@ const StaffRequestsRoute = StaffRequestsRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompounderRoute = CompounderRouteImport.update({
+  id: '/compounder',
+  path: '/compounder',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccessRoute = AccessRouteImport.update({
@@ -38,12 +44,14 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/access': typeof AccessRoute
+  '/compounder': typeof CompounderRoute
   '/dashboard': typeof DashboardRoute
   '/staff-requests': typeof StaffRequestsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/access': typeof AccessRoute
+  '/compounder': typeof CompounderRoute
   '/dashboard': typeof DashboardRoute
   '/staff-requests': typeof StaffRequestsRoute
 }
@@ -51,20 +59,28 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/access': typeof AccessRoute
+  '/compounder': typeof CompounderRoute
   '/dashboard': typeof DashboardRoute
   '/staff-requests': typeof StaffRequestsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/access' | '/dashboard' | '/staff-requests'
+  fullPaths: '/' | '/access' | '/compounder' | '/dashboard' | '/staff-requests'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/access' | '/dashboard' | '/staff-requests'
-  id: '__root__' | '/' | '/access' | '/dashboard' | '/staff-requests'
+  to: '/' | '/access' | '/compounder' | '/dashboard' | '/staff-requests'
+  id:
+    | '__root__'
+    | '/'
+    | '/access'
+    | '/compounder'
+    | '/dashboard'
+    | '/staff-requests'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccessRoute: typeof AccessRoute
+  CompounderRoute: typeof CompounderRoute
   DashboardRoute: typeof DashboardRoute
   StaffRequestsRoute: typeof StaffRequestsRoute
 }
@@ -83,6 +99,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/compounder': {
+      id: '/compounder'
+      path: '/compounder'
+      fullPath: '/compounder'
+      preLoaderRoute: typeof CompounderRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/access': {
@@ -105,9 +128,20 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccessRoute: AccessRoute,
+  CompounderRoute: CompounderRoute,
   DashboardRoute: DashboardRoute,
   StaffRequestsRoute: StaffRequestsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
