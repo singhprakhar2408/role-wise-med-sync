@@ -9,8 +9,56 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as StaffRequestsRouteImport } from './routes/staff-requests'
+import { Route as RecordsRouteImport } from './routes/records'
+import { Route as PharmacyRouteImport } from './routes/pharmacy'
+import { Route as LabRouteImport } from './routes/lab'
+import { Route as DoctorRouteImport } from './routes/doctor'
+import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as CompounderRouteImport } from './routes/compounder'
+import { Route as AccessRouteImport } from './routes/access'
 import { Route as IndexRouteImport } from './routes/index'
 
+const StaffRequestsRoute = StaffRequestsRouteImport.update({
+  id: '/staff-requests',
+  path: '/staff-requests',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecordsRoute = RecordsRouteImport.update({
+  id: '/records',
+  path: '/records',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PharmacyRoute = PharmacyRouteImport.update({
+  id: '/pharmacy',
+  path: '/pharmacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LabRoute = LabRouteImport.update({
+  id: '/lab',
+  path: '/lab',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DoctorRoute = DoctorRouteImport.update({
+  id: '/doctor',
+  path: '/doctor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompounderRoute = CompounderRouteImport.update({
+  id: '/compounder',
+  path: '/compounder',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccessRoute = AccessRouteImport.update({
+  id: '/access',
+  path: '/access',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -19,28 +67,144 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/access': typeof AccessRoute
+  '/compounder': typeof CompounderRoute
+  '/dashboard': typeof DashboardRoute
+  '/doctor': typeof DoctorRoute
+  '/lab': typeof LabRoute
+  '/pharmacy': typeof PharmacyRoute
+  '/records': typeof RecordsRoute
+  '/staff-requests': typeof StaffRequestsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/access': typeof AccessRoute
+  '/compounder': typeof CompounderRoute
+  '/dashboard': typeof DashboardRoute
+  '/doctor': typeof DoctorRoute
+  '/lab': typeof LabRoute
+  '/pharmacy': typeof PharmacyRoute
+  '/records': typeof RecordsRoute
+  '/staff-requests': typeof StaffRequestsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/access': typeof AccessRoute
+  '/compounder': typeof CompounderRoute
+  '/dashboard': typeof DashboardRoute
+  '/doctor': typeof DoctorRoute
+  '/lab': typeof LabRoute
+  '/pharmacy': typeof PharmacyRoute
+  '/records': typeof RecordsRoute
+  '/staff-requests': typeof StaffRequestsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/access'
+    | '/compounder'
+    | '/dashboard'
+    | '/doctor'
+    | '/lab'
+    | '/pharmacy'
+    | '/records'
+    | '/staff-requests'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/access'
+    | '/compounder'
+    | '/dashboard'
+    | '/doctor'
+    | '/lab'
+    | '/pharmacy'
+    | '/records'
+    | '/staff-requests'
+  id:
+    | '__root__'
+    | '/'
+    | '/access'
+    | '/compounder'
+    | '/dashboard'
+    | '/doctor'
+    | '/lab'
+    | '/pharmacy'
+    | '/records'
+    | '/staff-requests'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccessRoute: typeof AccessRoute
+  CompounderRoute: typeof CompounderRoute
+  DashboardRoute: typeof DashboardRoute
+  DoctorRoute: typeof DoctorRoute
+  LabRoute: typeof LabRoute
+  PharmacyRoute: typeof PharmacyRoute
+  RecordsRoute: typeof RecordsRoute
+  StaffRequestsRoute: typeof StaffRequestsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/staff-requests': {
+      id: '/staff-requests'
+      path: '/staff-requests'
+      fullPath: '/staff-requests'
+      preLoaderRoute: typeof StaffRequestsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/records': {
+      id: '/records'
+      path: '/records'
+      fullPath: '/records'
+      preLoaderRoute: typeof RecordsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pharmacy': {
+      id: '/pharmacy'
+      path: '/pharmacy'
+      fullPath: '/pharmacy'
+      preLoaderRoute: typeof PharmacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/lab': {
+      id: '/lab'
+      path: '/lab'
+      fullPath: '/lab'
+      preLoaderRoute: typeof LabRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/doctor': {
+      id: '/doctor'
+      path: '/doctor'
+      fullPath: '/doctor'
+      preLoaderRoute: typeof DoctorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/compounder': {
+      id: '/compounder'
+      path: '/compounder'
+      fullPath: '/compounder'
+      preLoaderRoute: typeof CompounderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/access': {
+      id: '/access'
+      path: '/access'
+      fullPath: '/access'
+      preLoaderRoute: typeof AccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -53,17 +217,15 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccessRoute: AccessRoute,
+  CompounderRoute: CompounderRoute,
+  DashboardRoute: DashboardRoute,
+  DoctorRoute: DoctorRoute,
+  LabRoute: LabRoute,
+  PharmacyRoute: PharmacyRoute,
+  RecordsRoute: RecordsRoute,
+  StaffRequestsRoute: StaffRequestsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
