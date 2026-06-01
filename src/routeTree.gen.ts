@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as StaffRequestsRouteImport } from './routes/staff-requests'
+import { Route as LabRouteImport } from './routes/lab'
 import { Route as DoctorRouteImport } from './routes/doctor'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CompounderRouteImport } from './routes/compounder'
@@ -19,6 +20,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const StaffRequestsRoute = StaffRequestsRouteImport.update({
   id: '/staff-requests',
   path: '/staff-requests',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LabRoute = LabRouteImport.update({
+  id: '/lab',
+  path: '/lab',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DoctorRoute = DoctorRouteImport.update({
@@ -53,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/compounder': typeof CompounderRoute
   '/dashboard': typeof DashboardRoute
   '/doctor': typeof DoctorRoute
+  '/lab': typeof LabRoute
   '/staff-requests': typeof StaffRequestsRoute
 }
 export interface FileRoutesByTo {
@@ -61,6 +68,7 @@ export interface FileRoutesByTo {
   '/compounder': typeof CompounderRoute
   '/dashboard': typeof DashboardRoute
   '/doctor': typeof DoctorRoute
+  '/lab': typeof LabRoute
   '/staff-requests': typeof StaffRequestsRoute
 }
 export interface FileRoutesById {
@@ -70,6 +78,7 @@ export interface FileRoutesById {
   '/compounder': typeof CompounderRoute
   '/dashboard': typeof DashboardRoute
   '/doctor': typeof DoctorRoute
+  '/lab': typeof LabRoute
   '/staff-requests': typeof StaffRequestsRoute
 }
 export interface FileRouteTypes {
@@ -80,6 +89,7 @@ export interface FileRouteTypes {
     | '/compounder'
     | '/dashboard'
     | '/doctor'
+    | '/lab'
     | '/staff-requests'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -88,6 +98,7 @@ export interface FileRouteTypes {
     | '/compounder'
     | '/dashboard'
     | '/doctor'
+    | '/lab'
     | '/staff-requests'
   id:
     | '__root__'
@@ -96,6 +107,7 @@ export interface FileRouteTypes {
     | '/compounder'
     | '/dashboard'
     | '/doctor'
+    | '/lab'
     | '/staff-requests'
   fileRoutesById: FileRoutesById
 }
@@ -105,6 +117,7 @@ export interface RootRouteChildren {
   CompounderRoute: typeof CompounderRoute
   DashboardRoute: typeof DashboardRoute
   DoctorRoute: typeof DoctorRoute
+  LabRoute: typeof LabRoute
   StaffRequestsRoute: typeof StaffRequestsRoute
 }
 
@@ -115,6 +128,13 @@ declare module '@tanstack/react-router' {
       path: '/staff-requests'
       fullPath: '/staff-requests'
       preLoaderRoute: typeof StaffRequestsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/lab': {
+      id: '/lab'
+      path: '/lab'
+      fullPath: '/lab'
+      preLoaderRoute: typeof LabRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/doctor': {
@@ -161,6 +181,7 @@ const rootRouteChildren: RootRouteChildren = {
   CompounderRoute: CompounderRoute,
   DashboardRoute: DashboardRoute,
   DoctorRoute: DoctorRoute,
+  LabRoute: LabRoute,
   StaffRequestsRoute: StaffRequestsRoute,
 }
 export const routeTree = rootRouteImport
