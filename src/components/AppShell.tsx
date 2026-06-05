@@ -19,7 +19,7 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
     { to: "/doctor", label: "Doctor Queue", roles: ["doctor", "host_admin"] },
     { to: "/lab", label: "Laboratory", roles: ["lab_technician", "host_admin"] },
     { to: "/pharmacy", label: "Pharmacy", roles: ["pharmacist", "host_admin"] },
-    { to: "/records", label: "Patient Records", roles: ["records_viewer", "doctor", "host_admin"] },
+    { to: "/records", label: "Patient Records", roles: ["records_viewer", "doctor", "compounder", "host_admin"] },
   ];
   const items = nav.filter(n => n.roles.includes(user.role));
 

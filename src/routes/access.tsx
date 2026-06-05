@@ -1,7 +1,8 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
+import { toast } from "sonner";
 import { BrandMark } from "@/components/AppShell";
-import { getHospitals, loginStaff, registerStaff, validHospitalCode, type Role } from "@/lib/mediflow-store";
+import { getHospitals, loginStaff, registerStaff, validHospitalCode, DOCTOR_SPECIALTIES, type Role } from "@/lib/mediflow-store";
 
 export const Route = createFileRoute("/access")({
   head: () => ({ meta: [{ title: "Hospital Access — MediFlow Clinical" }] }),
@@ -174,15 +175,32 @@ function LoginForm({ hospitalCode, onDone, onBack }: { hospitalCode: string; onD
 }
 
 function RegisterForm({ hospitalCode, onDone, onBack }: { hospitalCode: string; onDone: () => void; onBack: () => void }) {
-  const [f, setF] = useState({ fullName: "", email: "", mobile: "", role: "doctor" as Role, department: "", licenseNo: "", password: "", confirm: "" });
+  const [f, setF] = useState({ fullName: "", email: "", mobile: "", role: "doctor" as Role, department: "", specialty: "General Medicine", licenseNo: "", password: "", confirm: "" });
   const [err, setErr] = useState("");
+  const [otpSent, setOtpSent] = useState<string | null>(null);
+  const [otpInput, setOtpInput] = useState("");
+  const [otpVerified, setOtpVerified] = useState(false);
+
+  const sendOtp = () => {
+    if (!f.mobile.trim()) { setErr("Enter your mobile number first."); return; }
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    setOtpSent(code);
+    setErr("");
+    toast.success(`OTP sent to ${f.mobile}`, { description: `Demo code: ${code}` });
+  };
+  const verifyOtp = () => {
+    if (otpInput.trim() === otpSent) { setOtpVerified(true); setErr(""); toast.success("Mobile verified"); }
+    else { setErr("Invalid OTP. Try again."); }
+  };
 
   return (
     <form onSubmit={e => {
       e.preventDefault();
+      if (!otpVerified) { setErr("Please verify your mobile via OTP first."); return; }
       if (f.password !== f.confirm) { setErr("Passwords do not match."); return; }
       try {
-        registerStaff({ ...f, hospitalCode });
+        const { specialty, ...base } = f;
+        registerStaff({ ...base, hospitalCode, ...(base.role === "doctor" ? { specialty } : {}) });
         onDone();
       } catch (x: unknown) { setErr((x as Error).message); }
     }}>
@@ -193,7 +211,22 @@ function RegisterForm({ hospitalCode, onDone, onBack }: { hospitalCode: string; 
       <div className="mt-5 grid grid-cols-2 gap-3">
         <Field label="Full name" full><input required value={f.fullName} onChange={e => setF({ ...f, fullName: e.target.value })} className="input" /></Field>
         <Field label="Email"><input type="email" required value={f.email} onChange={e => setF({ ...f, email: e.target.value })} className="input" /></Field>
-        <Field label="Mobile"><input required value={f.mobile} onChange={e => setF({ ...f, mobile: e.target.value })} className="input" /></Field>
+        <Field label="Mobile">
+          <div className="flex gap-2">
+            <input required value={f.mobile} onChange={e => { setF({ ...f, mobile: e.target.value }); setOtpVerified(false); setOtpSent(null); }} className="input flex-1" />
+            <button type="button" onClick={sendOtp} disabled={otpVerified} className="rounded-xl px-3 text-xs border border-white/10 hover:bg-white/5 disabled:opacity-40 whitespace-nowrap">
+              {otpVerified ? "✓ Verified" : otpSent ? "Resend" : "Send OTP"}
+            </button>
+          </div>
+        </Field>
+        {otpSent && !otpVerified && (
+          <Field label="Enter OTP" full>
+            <div className="flex gap-2">
+              <input value={otpInput} onChange={e => setOtpInput(e.target.value)} maxLength={6} placeholder="6-digit code" className="input flex-1 font-mono tracking-widest" />
+              <button type="button" onClick={verifyOtp} className="rounded-xl px-4 text-xs btn-primary">Verify</button>
+            </div>
+          </Field>
+        )}
         <Field label="Role">
           <select value={f.role} onChange={e => setF({ ...f, role: e.target.value as Role })} className="input">
             <option value="doctor">Doctor</option>
@@ -205,6 +238,13 @@ function RegisterForm({ hospitalCode, onDone, onBack }: { hospitalCode: string; 
           </select>
         </Field>
         <Field label="Department"><input required value={f.department} onChange={e => setF({ ...f, department: e.target.value })} className="input" /></Field>
+        {f.role === "doctor" && (
+          <Field label="Specialty / Field" full>
+            <select value={f.specialty} onChange={e => setF({ ...f, specialty: e.target.value })} className="input">
+              {DOCTOR_SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Field>
+        )}
         <Field label="License / Reg. no."><input value={f.licenseNo} onChange={e => setF({ ...f, licenseNo: e.target.value })} className="input" /></Field>
         <Field label="Password"><input type="password" required value={f.password} onChange={e => setF({ ...f, password: e.target.value })} className="input" /></Field>
         <Field label="Confirm password"><input type="password" required value={f.confirm} onChange={e => setF({ ...f, confirm: e.target.value })} className="input" /></Field>
