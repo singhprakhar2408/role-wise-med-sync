@@ -26,6 +26,7 @@ export interface StaffAccount {
   mobile: string;
   role: Role;
   department: string;
+  specialty?: string;
   licenseNo?: string;
   photo?: string;
   password: string;
@@ -33,6 +34,13 @@ export interface StaffAccount {
   active: boolean;
   createdAt: number;
 }
+
+export const DOCTOR_SPECIALTIES = [
+  "General Medicine", "Cardiology", "Neurology", "Orthopedics",
+  "Pediatrics", "Gynecology", "Dermatology", "ENT",
+  "Ophthalmology", "Psychiatry", "Pulmonology", "Gastroenterology",
+  "Nephrology", "Oncology", "Endocrinology", "General Surgery",
+] as const;
 
 export interface Session {
   userId: string;
