@@ -199,9 +199,8 @@ function RegisterForm({ hospitalCode, onDone, onBack }: { hospitalCode: string; 
       if (!otpVerified) { setErr("Please verify your mobile via OTP first."); return; }
       if (f.password !== f.confirm) { setErr("Passwords do not match."); return; }
       try {
-        const payload = { ...f };
-        if (payload.role !== "doctor") delete (payload as Partial<typeof payload>).specialty;
-        registerStaff({ ...payload, hospitalCode });
+        const { specialty, ...base } = f;
+        registerStaff({ ...base, hospitalCode, ...(base.role === "doctor" ? { specialty } : {}) });
         onDone();
       } catch (x: unknown) { setErr((x as Error).message); }
     }}>
