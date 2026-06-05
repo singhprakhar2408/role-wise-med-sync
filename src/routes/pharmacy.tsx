@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 
 export const Route = createFileRoute("/pharmacy")({
@@ -67,7 +68,7 @@ function Pharmacy() {
             </div>
 
             {r.status === "pending" && (
-              <button onClick={() => setRx(list => list.map(x => x.id === r.id ? { ...x, status: "dispensed" } : x))}
+              <button onClick={() => { setRx(list => list.map(x => x.id === r.id ? { ...x, status: "dispensed" } : x)); toast.success("Marked dispensed", { description: `${r.patient} · ${r.id}` }); }}
                 className="btn-primary mt-4 rounded-xl px-4 py-2 text-sm">Mark dispensed</button>
             )}
           </div>
