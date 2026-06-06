@@ -220,13 +220,14 @@ function Access() {
 
 function roleHome(role: Role) {
   switch (role) {
-    case "host_admin":
+    case "super_admin":
+    case "hospital_admin":
       return "/dashboard";
     case "doctor":
       return "/doctor";
     case "compounder":
       return "/compounder";
-    case "lab_technician":
+    case "lab":
       return "/lab";
     case "pharmacist":
       return "/pharmacy";
@@ -234,6 +235,7 @@ function roleHome(role: Role) {
       return "/records";
   }
 }
+
 
 function LoginForm({
   hospitalCode,
