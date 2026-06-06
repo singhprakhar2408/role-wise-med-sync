@@ -191,10 +191,17 @@ function write<T>(key: string, val: T) {
 }
 
 function configuredHospitals(): Hospital[] {
-  const raw = import.meta.env.VITE_MEDIFLOW_HOSPITALS as string | undefined;
-  if (!raw?.trim()) return [];
+  const fallbackHospitals: Hospital[] = [
+    { code: "DEMO-HOSPITAL-001", name: "Demo Hospital" },
+    { code: "ROORKEE-001", name: "Roorkee Demo Hospital" },
+    { code: "DELHI-001", name: "Delhi Demo Hospital" },
+  ];
 
-  return raw
+  const raw = import.meta.env.VITE_MEDIFLOW_HOSPITALS as string | undefined;
+
+  if (!raw?.trim()) return fallbackHospitals;
+
+  const configured = raw
     .split(",")
     .map((part) => {
       const [codePart, ...nameParts] = part.split(":");
@@ -204,6 +211,8 @@ function configuredHospitals(): Hospital[] {
       return { code, name };
     })
     .filter((hospital): hospital is Hospital => Boolean(hospital));
+
+  return configured.length > 0 ? configured : fallbackHospitals;
 }
 
 export function getHospitals(): Hospital[] {
