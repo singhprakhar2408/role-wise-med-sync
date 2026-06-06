@@ -5,8 +5,8 @@ import {
   getLabOrders,
   getPatientQueue,
   getPrescriptionOrders,
-  staffForHospital,
 } from "@/lib/mediflow-store";
+import { useHospitalStaff } from "@/hooks/use-mediflow";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — MediFlow Clinical" }] }),
@@ -15,7 +15,7 @@ export const Route = createFileRoute("/dashboard")({
 
 function Dashboard() {
   const u = currentUser();
-  const staff = u ? staffForHospital(u.hospitalCode) : [];
+  const { staff } = useHospitalStaff(u?.hospitalId ?? null);
   const patients = u ? getPatientQueue(u.hospitalCode) : [];
   const labOrders = u ? getLabOrders(u.hospitalCode) : [];
   const prescriptions = u ? getPrescriptionOrders(u.hospitalCode) : [];
@@ -26,6 +26,7 @@ function Dashboard() {
   const labPending = labOrders.filter((o) => o.status !== "report_uploaded").length;
   const reports = labOrders.filter((o) => o.status === "report_uploaded").length;
   const pharmacyPending = prescriptions.filter((o) => o.status === "pending").length;
+
 
   const stats = [
     {

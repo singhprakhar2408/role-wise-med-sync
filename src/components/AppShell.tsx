@@ -12,20 +12,22 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
     return null;
   }
 
+  const admin = ["hospital_admin", "super_admin"];
   const nav: Array<{ to: string; label: string; roles: Array<string> }> = [
-    { to: "/dashboard", label: "Dashboard", roles: ["host_admin"] },
-    { to: "/staff-requests", label: "Staff Requests", roles: ["host_admin"] },
-    { to: "/compounder", label: "Intake", roles: ["compounder", "host_admin"] },
-    { to: "/doctor", label: "Doctor Queue", roles: ["doctor", "host_admin"] },
-    { to: "/lab", label: "Laboratory", roles: ["lab_technician", "host_admin"] },
-    { to: "/pharmacy", label: "Pharmacy", roles: ["pharmacist", "host_admin"] },
+    { to: "/dashboard", label: "Dashboard", roles: admin },
+    { to: "/staff-requests", label: "Staff Requests", roles: admin },
+    { to: "/compounder", label: "Intake", roles: ["compounder", ...admin] },
+    { to: "/doctor", label: "Doctor Queue", roles: ["doctor", ...admin] },
+    { to: "/lab", label: "Laboratory", roles: ["lab", ...admin] },
+    { to: "/pharmacy", label: "Pharmacy", roles: ["pharmacist", ...admin] },
     {
       to: "/records",
       label: "Patient Records",
-      roles: ["records_viewer", "doctor", "compounder", "host_admin"],
+      roles: ["records_viewer", "doctor", "compounder", ...admin],
     },
   ];
   const items = nav.filter((n) => n.roles.includes(user.role));
+
 
   return (
     <div className="min-h-screen flex">

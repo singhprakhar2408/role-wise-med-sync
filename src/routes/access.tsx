@@ -1,16 +1,20 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { ArrowLeft, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck, UserPlus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { BrandMark } from "@/components/AppShell";
 import {
-  getHospitals,
+  listHospitals,
   loginStaff,
   registerStaff,
-  validHospitalCode,
+  verifyHospitalCode,
   DOCTOR_SPECIALTIES,
+  REGISTRABLE_ROLES,
+  ROLE_LABEL,
+  type Hospital,
   type Role,
 } from "@/lib/mediflow-store";
+
 
 export const Route = createFileRoute("/access")({
   head: () => ({ meta: [{ title: "Hospital Access — MediFlow Clinical" }] }),
@@ -24,17 +28,26 @@ function Access() {
   const [step, setStep] = useState<Step>("intro");
   const [hospitalCode, setHospitalCode] = useState("");
   const [hospitalErr, setHospitalErr] = useState("");
-  const configuredHospitals = getHospitals();
+  const [verifying, setVerifying] = useState(false);
+  const [configuredHospitals, setConfiguredHospitals] = useState<Hospital[]>([]);
 
-  const goVerify = () => {
-    const found = validHospitalCode(hospitalCode);
-    if (!found) {
-      setHospitalErr("Hospital code not found. Contact your hospital administrator.");
-      return;
+  useEffect(() => {
+    listHospitals().then(setConfiguredHospitals).catch(() => setConfiguredHospitals([]));
+  }, []);
+
+  const goVerify = async () => {
+    setVerifying(true);
+    try {
+      await verifyHospitalCode(hospitalCode);
+      setHospitalErr("");
+      setStep("choose");
+    } catch (e: unknown) {
+      setHospitalErr((e as Error).message);
+    } finally {
+      setVerifying(false);
     }
-    setHospitalErr("");
-    setStep("choose");
   };
+
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -207,13 +220,14 @@ function Access() {
 
 function roleHome(role: Role) {
   switch (role) {
-    case "host_admin":
+    case "super_admin":
+    case "hospital_admin":
       return "/dashboard";
     case "doctor":
       return "/doctor";
     case "compounder":
       return "/compounder";
-    case "lab_technician":
+    case "lab":
       return "/lab";
     case "pharmacist":
       return "/pharmacy";
@@ -221,6 +235,7 @@ function roleHome(role: Role) {
       return "/records";
   }
 }
+
 
 function LoginForm({
   hospitalCode,
@@ -244,7 +259,8 @@ function LoginForm({
         e.preventDefault();
         setLoading(true);
         try {
-          const u = await loginStaff(hospitalCode, email, password, remember);
+          const u = await loginStaff(hospitalCode, email, password);
+          void remember;
           onDone(u.role);
         } catch (x: unknown) {
           setErr((x as Error).message);
@@ -514,13 +530,12 @@ function RegisterForm({
             onChange={(e) => setF({ ...f, role: e.target.value as Role })}
             className="input"
           >
-            <option value="doctor">Doctor</option>
-            <option value="compounder">Compounder</option>
-            <option value="lab_technician">Lab Technician</option>
-            <option value="pharmacist">Pharmacist</option>
-            <option value="records_viewer">Records Viewer</option>
+            {REGISTRABLE_ROLES.map((r) => (
+              <option key={r} value={r}>{ROLE_LABEL[r]}</option>
+            ))}
           </select>
         </Field>
+
         <Field label="Department">
           <input
             required

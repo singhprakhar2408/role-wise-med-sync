@@ -12,11 +12,4 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
-  nitro: {
-    // Vercel deployment configuration - prerender home page
-    prerender: {
-      crawlLinks: false,
-      routes: ["/"],
-    },
-  },
 });
