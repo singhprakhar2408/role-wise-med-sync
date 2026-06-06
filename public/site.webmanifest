@@ -1,0 +1,9 @@
+{
+  "name": "MediFlow Clinical",
+  "short_name": "MediFlow",
+  "description": "Secure role-based hospital workflow platform.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07111f",
+  "theme_color": "#16b7d8"
+}

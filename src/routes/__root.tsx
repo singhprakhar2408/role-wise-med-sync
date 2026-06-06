@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
+import { SITE } from "@/lib/site-config";
 
 function NotFoundComponent() {
   return (
@@ -78,24 +79,26 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "MediFlow Harmony streamlines hospital operations by digitally connecting departments and staff for efficient patient care." },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "MediFlow Harmony streamlines hospital operations by digitally connecting departments and staff for efficient patient care." },
+      { title: `${SITE.name} — Secure Hospital Workflow Platform` },
+      { name: "description", content: SITE.description },
+      { name: "author", content: SITE.author },
+      { name: "robots", content: "index, follow, max-image-preview:large" },
+      { property: "og:title", content: `${SITE.name} — Secure Hospital Workflow Platform` },
+      { property: "og:description", content: SITE.description },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
-      { name: "twitter:title", content: "Lovable App" },
-      { name: "twitter:description", content: "MediFlow Harmony streamlines hospital operations by digitally connecting departments and staff for efficient patient care." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/6572e7d4-c5ed-4929-a82d-46e87921647b/id-preview-34aaf7dd--99add7ca-e12b-46dc-ad83-a02f3097880c.lovable.app-1780331933496.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/6572e7d4-c5ed-4929-a82d-46e87921647b/id-preview-34aaf7dd--99add7ca-e12b-46dc-ad83-a02f3097880c.lovable.app-1780331933496.png" },
+      { property: "og:site_name", content: SITE.name },
+      { property: "og:url", content: SITE.url },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: `${SITE.name} — Secure Hospital Workflow Platform` },
+      { name: "twitter:description", content: SITE.description },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
       },
+      { rel: "canonical", href: SITE.url },
+      { rel: "manifest", href: "/site.webmanifest" },
     ],
   }),
   shellComponent: RootShell,
