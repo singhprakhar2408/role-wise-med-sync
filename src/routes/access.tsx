@@ -259,7 +259,8 @@ function LoginForm({
         e.preventDefault();
         setLoading(true);
         try {
-          const u = await loginStaff(hospitalCode, email, password, remember);
+          const u = await loginStaff(hospitalCode, email, password);
+          void remember;
           onDone(u.role);
         } catch (x: unknown) {
           setErr((x as Error).message);
