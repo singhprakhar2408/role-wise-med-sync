@@ -530,13 +530,12 @@ function RegisterForm({
             onChange={(e) => setF({ ...f, role: e.target.value as Role })}
             className="input"
           >
-            <option value="doctor">Doctor</option>
-            <option value="compounder">Compounder</option>
-            <option value="lab_technician">Lab Technician</option>
-            <option value="pharmacist">Pharmacist</option>
-            <option value="records_viewer">Records Viewer</option>
+            {REGISTRABLE_ROLES.map((r) => (
+              <option key={r} value={r}>{ROLE_LABEL[r]}</option>
+            ))}
           </select>
         </Field>
+
         <Field label="Department">
           <input
             required

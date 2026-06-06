@@ -6,9 +6,10 @@ import { SmartInput } from "@/components/SmartInput";
 import {
   addPatientToQueue,
   currentUser,
-  staffForHospital,
   DOCTOR_SPECIALTIES,
 } from "@/lib/mediflow-store";
+import { useHospitalStaff } from "@/hooks/use-mediflow";
+
 
 export const Route = createFileRoute("/compounder")({
   head: () => ({ meta: [{ title: "Patient Intake — MediFlow Clinical" }] }),
@@ -60,13 +61,12 @@ interface SentIntake extends Intake {
 
 function Compounder() {
   const user = currentUser();
+  const { staff } = useHospitalStaff(user?.hospitalId ?? null);
   const doctors = useMemo(
-    () =>
-      user
-        ? staffForHospital(user.hospitalCode).filter((s) => s.role === "doctor" && s.active)
-        : [],
-    [user],
+    () => staff.filter((s) => s.role === "doctor" && s.active),
+    [staff],
   );
+
   const [f, setF] = useState<Intake>({ ...empty, id: nextId(), doctorId: doctors[0]?.id ?? "" });
   const [queue, setQueue] = useState<SentIntake[]>([]);
 
