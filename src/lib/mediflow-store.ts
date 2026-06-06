@@ -1,40 +1,35 @@
-// MediFlow Clinical — browser persistence used by the current frontend shell.
-// For a real hospital deployment, replace these functions with server-backed APIs.
+// MediFlow Clinical — production auth via Supabase + queue/lab/prescription
+// data still in localStorage (frontend-only demo data). Auth, hospital
+// verification, and profile/staff management are all Supabase-backed.
+
+import { supabase } from "@/integrations/supabase/client";
 
 export type Role =
-  | "host_admin"
+  | "super_admin"
+  | "hospital_admin"
   | "doctor"
   | "compounder"
-  | "lab_technician"
+  | "lab"
   | "pharmacist"
   | "records_viewer";
 
 export const ROLE_LABEL: Record<Role, string> = {
-  host_admin: "Host / Admin",
+  super_admin: "Super Admin",
+  hospital_admin: "Hospital Admin",
   doctor: "Doctor",
   compounder: "Compounder",
-  lab_technician: "Lab Technician",
+  lab: "Laboratory",
   pharmacist: "Pharmacist",
   records_viewer: "Records Viewer",
 };
 
-export interface StaffAccount {
-  id: string;
-  hospitalCode: string;
-  fullName: string;
-  email: string;
-  mobile: string;
-  role: Role;
-  department: string;
-  specialty?: string;
-  licenseNo?: string;
-  photo?: string;
-  passwordHash?: string;
-  passwordSalt?: string;
-  status: "pending" | "approved" | "rejected";
-  active: boolean;
-  createdAt: number;
-}
+export const REGISTRABLE_ROLES: Role[] = [
+  "doctor",
+  "compounder",
+  "lab",
+  "pharmacist",
+  "records_viewer",
+];
 
 export const DOCTOR_SPECIALTIES = [
   "General Medicine",
@@ -55,28 +50,302 @@ export const DOCTOR_SPECIALTIES = [
   "General Surgery",
 ] as const;
 
-export interface Session {
-  userId: string;
-  hospitalCode: string;
+export interface Hospital {
+  id: string;
+  code: string;
+  name: string;
+  status: "active" | "inactive";
 }
 
-const KEY_USERS = "mediflow.users";
-const KEY_SESSION = "mediflow.session";
-const KEY_HOSPITALS = "mediflow.hospitals";
+export interface StaffAccount {
+  id: string;
+  hospitalId: string | null;
+  hospitalCode: string;
+  fullName: string;
+  email: string;
+  mobile: string;
+  role: Role;
+  department: string;
+  specialty?: string;
+  licenseNo?: string;
+  status: "pending" | "approved" | "rejected" | "suspended";
+  active: boolean;
+  createdAt: number;
+}
+
+const PROFILE_CACHE_KEY = "mediflow.profile";
+const HOSPITAL_CACHE_KEY = "mediflow.hospitalCache";
+
+interface ProfileRow {
+  id: string;
+  hospital_id: string | null;
+  full_name: string;
+  email: string;
+  mobile: string | null;
+  role: Role;
+  department: string | null;
+  specialty: string | null;
+  license_no: string | null;
+  status: "pending" | "approved" | "rejected" | "suspended";
+  created_at: string;
+}
+
+function rowToAccount(p: ProfileRow, hospitalCode: string): StaffAccount {
+  return {
+    id: p.id,
+    hospitalId: p.hospital_id,
+    hospitalCode,
+    fullName: p.full_name,
+    email: p.email,
+    mobile: p.mobile ?? "",
+    role: p.role,
+    department: p.department ?? "",
+    specialty: p.specialty ?? undefined,
+    licenseNo: p.license_no ?? undefined,
+    status: p.status,
+    active: p.status === "approved",
+    createdAt: new Date(p.created_at).getTime(),
+  };
+}
+
+function cacheProfile(account: StaffAccount) {
+  localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(account));
+}
+function clearProfileCache() {
+  localStorage.removeItem(PROFILE_CACHE_KEY);
+}
+
+// --- Hospital lookup (Supabase) ---
+export async function verifyHospitalCode(code: string): Promise<Hospital> {
+  const normalized = code.trim();
+  const { data, error } = await supabase
+    .from("hospitals")
+    .select("id, code, name, status")
+    .eq("code", normalized)
+    .eq("status", "active")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Hospital code not found or inactive.");
+  const hospital = data as Hospital;
+  if (typeof window !== "undefined") {
+    const cache = JSON.parse(localStorage.getItem(HOSPITAL_CACHE_KEY) || "{}");
+    cache[hospital.code] = hospital;
+    cache[hospital.id] = hospital;
+    localStorage.setItem(HOSPITAL_CACHE_KEY, JSON.stringify(cache));
+  }
+  return hospital;
+}
+
+export function cachedHospital(idOrCode: string): Hospital | undefined {
+  if (typeof window === "undefined") return undefined;
+  const cache = JSON.parse(localStorage.getItem(HOSPITAL_CACHE_KEY) || "{}");
+  return cache[idOrCode];
+}
+
+export async function listHospitals(): Promise<Hospital[]> {
+  const { data, error } = await supabase
+    .from("hospitals")
+    .select("id, code, name, status")
+    .order("code");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Hospital[];
+}
+
+// --- Login ---
+export async function loginStaff(
+  hospitalCode: string,
+  email: string,
+  password: string,
+): Promise<StaffAccount> {
+  // 1. Verify hospital exists + active
+  const hospital = await verifyHospitalCode(hospitalCode);
+  // 2. Sign in
+  const { data: auth, error: authErr } = await supabase.auth.signInWithPassword({
+    email: email.trim(),
+    password,
+  });
+  if (authErr || !auth.user) throw new Error(authErr?.message || "Invalid credentials.");
+  // 3. Fetch profile
+  const { data: profile, error: profErr } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", auth.user.id)
+    .maybeSingle();
+  if (profErr || !profile) {
+    await supabase.auth.signOut();
+    throw new Error("Your profile is not set up. Contact administrator.");
+  }
+  const p = profile as ProfileRow;
+  // 4. Status checks
+  if (p.status === "pending") {
+    await supabase.auth.signOut();
+    throw new Error("Your account is awaiting administrator approval.");
+  }
+  if (p.status === "rejected") {
+    await supabase.auth.signOut();
+    throw new Error("Your registration request was rejected.");
+  }
+  if (p.status === "suspended") {
+    await supabase.auth.signOut();
+    throw new Error("Your account has been suspended. Contact your hospital administrator.");
+  }
+  // 5. Hospital match (super_admin exempt)
+  if (p.role !== "super_admin" && p.hospital_id !== hospital.id) {
+    await supabase.auth.signOut();
+    throw new Error("This account does not belong to the selected hospital.");
+  }
+  const account = rowToAccount(p, p.role === "super_admin" ? hospital.code : hospital.code);
+  cacheProfile(account);
+  return account;
+}
+
+// --- Register ---
+export interface RegisterStaffInput {
+  hospitalCode: string;
+  fullName: string;
+  email: string;
+  mobile: string;
+  role: Role;
+  department: string;
+  specialty?: string;
+  licenseNo?: string;
+  password: string;
+}
+
+export async function registerStaff(input: RegisterStaffInput): Promise<void> {
+  if (!REGISTRABLE_ROLES.includes(input.role)) {
+    throw new Error("Selected role is not allowed for self-registration.");
+  }
+  const hospital = await verifyHospitalCode(input.hospitalCode);
+  const { data: auth, error: authErr } = await supabase.auth.signUp({
+    email: input.email.trim(),
+    password: input.password,
+    options: {
+      emailRedirectTo: `${window.location.origin}/access`,
+      data: {
+        full_name: input.fullName,
+        mobile: input.mobile,
+      },
+    },
+  });
+  if (authErr || !auth.user) throw new Error(authErr?.message || "Could not create account.");
+
+  // Insert profile (user is signed-in immediately on signUp when email confirm disabled)
+  const { error: insErr } = await supabase.from("profiles").insert({
+    id: auth.user.id,
+    hospital_id: hospital.id,
+    full_name: input.fullName,
+    email: input.email.trim(),
+    mobile: input.mobile,
+    role: input.role,
+    department: input.department,
+    specialty: input.specialty ?? null,
+    license_no: input.licenseNo ?? null,
+    // status forced to 'pending' by DB trigger for non-super-admin
+  });
+  // Sign back out so they wait for approval
+  await supabase.auth.signOut();
+  if (insErr) throw new Error(insErr.message);
+}
+
+// --- Session / current user cache ---
+export function currentUser(): StaffAccount | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as StaffAccount) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function refreshCurrentProfile(): Promise<StaffAccount | null> {
+  const { data: session } = await supabase.auth.getSession();
+  if (!session.session?.user) {
+    clearProfileCache();
+    return null;
+  }
+  const userId = session.session.user.id;
+  const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+  if (!profile) {
+    clearProfileCache();
+    return null;
+  }
+  const p = profile as ProfileRow;
+  let hospitalCode = "";
+  if (p.hospital_id) {
+    const cached = cachedHospital(p.hospital_id);
+    if (cached) hospitalCode = cached.code;
+    else {
+      const { data: h } = await supabase
+        .from("hospitals")
+        .select("id, code, name, status")
+        .eq("id", p.hospital_id)
+        .maybeSingle();
+      if (h) {
+        hospitalCode = (h as Hospital).code;
+        const cache = JSON.parse(localStorage.getItem(HOSPITAL_CACHE_KEY) || "{}");
+        cache[(h as Hospital).code] = h;
+        cache[(h as Hospital).id] = h;
+        localStorage.setItem(HOSPITAL_CACHE_KEY, JSON.stringify(cache));
+      }
+    }
+  } else if (p.role === "super_admin") {
+    hospitalCode = "GLOBAL";
+  }
+  const account = rowToAccount(p, hospitalCode);
+  cacheProfile(account);
+  return account;
+}
+
+export async function logout() {
+  await supabase.auth.signOut();
+  clearProfileCache();
+}
+
+// --- Staff management (hospital_admin / super_admin) ---
+export async function fetchStaffForHospital(hospitalId: string): Promise<StaffAccount[]> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("hospital_id", hospitalId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  const hospital = cachedHospital(hospitalId);
+  const code = hospital?.code ?? "";
+  return ((data ?? []) as ProfileRow[]).map((p) => rowToAccount(p, code));
+}
+
+export async function setUserStatus(
+  id: string,
+  status: "approved" | "rejected" | "suspended",
+): Promise<void> {
+  const { error } = await supabase.from("profiles").update({ status }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+// --- Hospitals admin (super_admin) ---
+export async function createHospital(code: string, name: string): Promise<Hospital> {
+  const { data, error } = await supabase
+    .from("hospitals")
+    .insert({ code: code.trim(), name: name.trim(), status: "active" })
+    .select("id, code, name, status")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as Hospital;
+}
+
+// =====================================================================
+// Below: legacy localStorage-backed clinical data (queue / lab / rx).
+// Unchanged; this is demo workflow state, not user auth.
+// =====================================================================
+
 const KEY_LAB_ORDERS = "mediflow.labOrders";
 const KEY_PATIENT_QUEUE = "mediflow.patientQueue";
 const KEY_PRESCRIPTIONS = "mediflow.prescriptions";
-const KEY_STORAGE_VERSION = "mediflow.storageVersion";
-const KEY_SUGGESTIONS = "mediflow.suggestions";
-const CURRENT_STORAGE_VERSION = "production-v1";
 const LAB_ORDERS_EVENT = "mediflow.labOrders.changed";
 const PATIENT_QUEUE_EVENT = "mediflow.patientQueue.changed";
 const PRESCRIPTIONS_EVENT = "mediflow.prescriptions.changed";
-
-export interface Hospital {
-  code: string;
-  name: string;
-}
 
 export type LabOrderStatus = "pending" | "sample_collected" | "processing" | "report_uploaded";
 export type PatientQueueStatus =
@@ -156,27 +425,8 @@ export interface PrescriptionOrder {
   dispensedByName?: string;
 }
 
-function ensureProductionStorage() {
-  if (typeof window === "undefined") return;
-  const version = localStorage.getItem(KEY_STORAGE_VERSION);
-  if (version === CURRENT_STORAGE_VERSION) return;
-
-  [
-    KEY_USERS,
-    KEY_SESSION,
-    KEY_HOSPITALS,
-    KEY_LAB_ORDERS,
-    KEY_PATIENT_QUEUE,
-    KEY_PRESCRIPTIONS,
-    KEY_SUGGESTIONS,
-  ].forEach((key) => localStorage.removeItem(key));
-  sessionStorage.removeItem(KEY_SESSION);
-  localStorage.setItem(KEY_STORAGE_VERSION, CURRENT_STORAGE_VERSION);
-}
-
 function read<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
-  ensureProductionStorage();
   try {
     const raw = localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
@@ -186,192 +436,7 @@ function read<T>(key: string, fallback: T): T {
 }
 function write<T>(key: string, val: T) {
   if (typeof window === "undefined") return;
-  ensureProductionStorage();
   localStorage.setItem(key, JSON.stringify(val));
-}
-
-function configuredHospitals(): Hospital[] {
-  const fallbackHospitals: Hospital[] = [
-    { code: "DEMO-HOSPITAL-001", name: "Demo Hospital" },
-    { code: "ROORKEE-001", name: "Roorkee Demo Hospital" },
-    { code: "DELHI-001", name: "Delhi Demo Hospital" },
-  ];
-
-  const raw = import.meta.env.VITE_MEDIFLOW_HOSPITALS as string | undefined;
-
-  if (!raw?.trim()) return fallbackHospitals;
-
-  const configured = raw
-    .split(",")
-    .map((part) => {
-      const [codePart, ...nameParts] = part.split(":");
-      const code = codePart?.trim().toUpperCase();
-      const name = nameParts.join(":").trim();
-      if (!code || !name) return null;
-      return { code, name };
-    })
-    .filter((hospital): hospital is Hospital => Boolean(hospital));
-
-  return configured.length > 0 ? configured : fallbackHospitals;
-}
-
-export function getHospitals(): Hospital[] {
-  const configured = configuredHospitals();
-  const local = read<Hospital[]>(KEY_HOSPITALS, []);
-  const merged = new Map<string, Hospital>();
-  [...configured, ...local].forEach((hospital) =>
-    merged.set(hospital.code.toUpperCase(), hospital),
-  );
-  return [...merged.values()];
-}
-
-export function validHospitalCode(code: string): Hospital | undefined {
-  return getHospitals().find((h) => h.code.toLowerCase() === code.trim().toLowerCase());
-}
-
-export function getUsers(): StaffAccount[] {
-  return read(KEY_USERS, [] as StaffAccount[]);
-}
-function saveUsers(u: StaffAccount[]) {
-  write(KEY_USERS, u);
-}
-
-function bytesToBase64(bytes: ArrayBuffer | Uint8Array) {
-  const array = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  return btoa(String.fromCharCode(...array));
-}
-
-function base64ToBytes(value: string) {
-  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
-}
-
-function passwordError(password: string) {
-  if (password.length < 12) return "Use at least 12 characters.";
-  if (!/[A-Z]/.test(password)) return "Add at least one uppercase letter.";
-  if (!/[a-z]/.test(password)) return "Add at least one lowercase letter.";
-  if (!/\d/.test(password)) return "Add at least one number.";
-  if (!/[^A-Za-z0-9]/.test(password)) return "Add at least one symbol.";
-  return "";
-}
-
-async function hashPassword(password: string, salt?: string) {
-  const resolvedSalt = salt ?? bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"],
-  );
-  const bits = await crypto.subtle.deriveBits(
-    {
-      name: "PBKDF2",
-      salt: base64ToBytes(resolvedSalt),
-      iterations: 210_000,
-      hash: "SHA-256",
-    },
-    key,
-    256,
-  );
-  return { salt: resolvedSalt, hash: bytesToBase64(bits) };
-}
-
-function secureCompare(a: string, b: string) {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i += 1) result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return result === 0;
-}
-
-export type RegisterStaffInput = Omit<
-  StaffAccount,
-  "id" | "status" | "active" | "createdAt" | "passwordHash" | "passwordSalt"
-> & { password: string };
-
-export async function registerStaff(input: RegisterStaffInput): Promise<StaffAccount> {
-  if (!validHospitalCode(input.hospitalCode)) {
-    throw new Error("Hospital code is not configured for this deployment.");
-  }
-  const policyError = passwordError(input.password);
-  if (policyError) throw new Error(policyError);
-
-  const users = getUsers();
-  if (
-    users.some(
-      (u) =>
-        u.email.toLowerCase() === input.email.toLowerCase() &&
-        u.hospitalCode === input.hospitalCode,
-    )
-  ) {
-    throw new Error("An account with this email already exists for this hospital.");
-  }
-  const { password, ...safeInput } = input;
-  const passwordRecord = await hashPassword(password);
-  const acct: StaffAccount = {
-    ...safeInput,
-    id: crypto.randomUUID(),
-    passwordHash: passwordRecord.hash,
-    passwordSalt: passwordRecord.salt,
-    status: "pending",
-    active: false,
-    createdAt: Date.now(),
-  };
-  users.push(acct);
-  saveUsers(users);
-  return acct;
-}
-
-export async function loginStaff(
-  hospitalCode: string,
-  email: string,
-  password: string,
-  remember: boolean,
-): Promise<StaffAccount> {
-  const users = getUsers();
-  const u = users.find(
-    (x) => x.hospitalCode === hospitalCode && x.email.toLowerCase() === email.trim().toLowerCase(),
-  );
-  if (!u) throw new Error("Invalid credentials.");
-  if (!u.passwordHash || !u.passwordSalt)
-    throw new Error("This account must be migrated by an administrator.");
-  const attempt = await hashPassword(password, u.passwordSalt);
-  if (!secureCompare(attempt.hash, u.passwordHash)) throw new Error("Invalid credentials.");
-  if (u.status !== "approved" || !u.active)
-    throw new Error("Your account is awaiting Host/Admin approval.");
-  const session: Session = { userId: u.id, hospitalCode };
-  if (remember) localStorage.setItem(KEY_SESSION, JSON.stringify(session));
-  else sessionStorage.setItem(KEY_SESSION, JSON.stringify(session));
-  return u;
-}
-
-export function getSession(): Session | null {
-  if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem(KEY_SESSION) || sessionStorage.getItem(KEY_SESSION);
-  return raw ? (JSON.parse(raw) as Session) : null;
-}
-
-export function logout() {
-  localStorage.removeItem(KEY_SESSION);
-  sessionStorage.removeItem(KEY_SESSION);
-}
-
-export function currentUser(): StaffAccount | null {
-  const s = getSession();
-  if (!s) return null;
-  return getUsers().find((u) => u.id === s.userId) ?? null;
-}
-
-export function setUserStatus(id: string, status: "approved" | "rejected") {
-  const users = getUsers();
-  const idx = users.findIndex((u) => u.id === id);
-  if (idx === -1) return;
-  users[idx].status = status;
-  users[idx].active = status === "approved";
-  saveUsers(users);
-}
-
-export function staffForHospital(code: string) {
-  return getUsers().filter((u) => u.hospitalCode === code);
 }
 
 function savePatientQueue(queue: PatientQueueRecord[]) {
