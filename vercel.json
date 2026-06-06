@@ -1,0 +1,16 @@
+{
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install --legacy-peer-deps",
+  "framework": "other",
+  "outputDirectory": ".output/public",
+  "public": false,
+  "env": {
+    "VITE_MEDIFLOW_HOSPITALS": {
+      "description": "Hospital codes for access"
+    },
+    "VITE_MEDIFLOW_SITE_URL": {
+      "description": "Site URL for hospital access"
+    }
+  }
+}
