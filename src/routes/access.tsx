@@ -1,16 +1,20 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { ArrowLeft, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck, UserPlus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { BrandMark } from "@/components/AppShell";
 import {
-  getHospitals,
+  listHospitals,
   loginStaff,
   registerStaff,
-  validHospitalCode,
+  verifyHospitalCode,
   DOCTOR_SPECIALTIES,
+  REGISTRABLE_ROLES,
+  ROLE_LABEL,
+  type Hospital,
   type Role,
 } from "@/lib/mediflow-store";
+
 
 export const Route = createFileRoute("/access")({
   head: () => ({ meta: [{ title: "Hospital Access — MediFlow Clinical" }] }),
