@@ -28,17 +28,26 @@ function Access() {
   const [step, setStep] = useState<Step>("intro");
   const [hospitalCode, setHospitalCode] = useState("");
   const [hospitalErr, setHospitalErr] = useState("");
-  const configuredHospitals = getHospitals();
+  const [verifying, setVerifying] = useState(false);
+  const [configuredHospitals, setConfiguredHospitals] = useState<Hospital[]>([]);
 
-  const goVerify = () => {
-    const found = validHospitalCode(hospitalCode);
-    if (!found) {
-      setHospitalErr("Hospital code not found. Contact your hospital administrator.");
-      return;
+  useEffect(() => {
+    listHospitals().then(setConfiguredHospitals).catch(() => setConfiguredHospitals([]));
+  }, []);
+
+  const goVerify = async () => {
+    setVerifying(true);
+    try {
+      await verifyHospitalCode(hospitalCode);
+      setHospitalErr("");
+      setStep("choose");
+    } catch (e: unknown) {
+      setHospitalErr((e as Error).message);
+    } finally {
+      setVerifying(false);
     }
-    setHospitalErr("");
-    setStep("choose");
   };
+
 
   return (
     <div className="min-h-screen relative overflow-hidden">
