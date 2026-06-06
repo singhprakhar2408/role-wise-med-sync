@@ -14,16 +14,105 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      hospitals: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          name: string
+          status: Database["public"]["Enums"]["hospital_status"]
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: string
+          name: string
+          status?: Database["public"]["Enums"]["hospital_status"]
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          name?: string
+          status?: Database["public"]["Enums"]["hospital_status"]
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          department: string | null
+          email: string
+          full_name: string
+          hospital_id: string | null
+          id: string
+          license_no: string | null
+          mobile: string | null
+          role: Database["public"]["Enums"]["app_role"]
+          specialty: string | null
+          status: Database["public"]["Enums"]["profile_status"]
+        }
+        Insert: {
+          created_at?: string
+          department?: string | null
+          email: string
+          full_name?: string
+          hospital_id?: string | null
+          id: string
+          license_no?: string | null
+          mobile?: string | null
+          role?: Database["public"]["Enums"]["app_role"]
+          specialty?: string | null
+          status?: Database["public"]["Enums"]["profile_status"]
+        }
+        Update: {
+          created_at?: string
+          department?: string | null
+          email?: string
+          full_name?: string
+          hospital_id?: string | null
+          id?: string
+          license_no?: string | null
+          mobile?: string | null
+          role?: Database["public"]["Enums"]["app_role"]
+          specialty?: string | null
+          status?: Database["public"]["Enums"]["profile_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_hospital_id_fkey"
+            columns: ["hospital_id"]
+            isOneToOne: false
+            referencedRelation: "hospitals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      current_hospital_id: { Args: never; Returns: string }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role:
+        | "super_admin"
+        | "hospital_admin"
+        | "doctor"
+        | "compounder"
+        | "lab"
+        | "pharmacist"
+        | "records_viewer"
+      hospital_status: "active" | "inactive"
+      profile_status: "pending" | "approved" | "rejected" | "suspended"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +239,18 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: [
+        "super_admin",
+        "hospital_admin",
+        "doctor",
+        "compounder",
+        "lab",
+        "pharmacist",
+        "records_viewer",
+      ],
+      hospital_status: ["active", "inactive"],
+      profile_status: ["pending", "approved", "rejected", "suspended"],
+    },
   },
 } as const
