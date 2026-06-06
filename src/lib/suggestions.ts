@@ -1,11 +1,21 @@
 // Hospital-scoped smart suggestion bank.
 const KEY = "mediflow.suggestions";
+const IS_PRODUCTION = import.meta.env.PROD;
+
+function blockClinicalBrowserStorage(action: string) {
+  if (IS_PRODUCTION) {
+    throw new Error(
+      `Blocked unsafe clinical browser storage in production: ${action}. Move this workflow to Supabase/Postgres with RLS before accepting real patient data.`,
+    );
+  }
+}
 
 type Bank = Record<string, Record<string, Record<string, number>>>;
 // hospitalCode -> field -> term -> usageCount
 
 function read(): Bank {
   if (typeof window === "undefined") return {};
+  if (IS_PRODUCTION) return {};
   try {
     return JSON.parse(localStorage.getItem(KEY) || "{}");
   } catch {
@@ -13,6 +23,7 @@ function read(): Bank {
   }
 }
 function write(b: Bank) {
+  blockClinicalBrowserStorage("write clinical suggestion bank");
   localStorage.setItem(KEY, JSON.stringify(b));
 }
 
@@ -34,6 +45,7 @@ export function getSuggestions(
 }
 
 export function learn(hospital: string, field: string, term: string) {
+  blockClinicalBrowserStorage("learn clinical suggestion");
   const t = term.trim();
   if (!t) return;
   const b = read();

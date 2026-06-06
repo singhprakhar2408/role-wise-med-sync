@@ -27,7 +27,6 @@ function Dashboard() {
   const reports = labOrders.filter((o) => o.status === "report_uploaded").length;
   const pharmacyPending = prescriptions.filter((o) => o.status === "pending").length;
 
-
   const stats = [
     {
       label: "Patients today",

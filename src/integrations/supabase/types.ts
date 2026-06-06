@@ -1,107 +1,110 @@
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[]
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
-  }
+    PostgrestVersion: "14.5";
+  };
   public: {
     Tables: {
       hospitals: {
         Row: {
-          code: string
-          created_at: string
-          id: string
-          name: string
-          status: Database["public"]["Enums"]["hospital_status"]
-        }
+          code: string;
+          created_at: string;
+          id: string;
+          name: string;
+          status: Database["public"]["Enums"]["hospital_status"];
+        };
         Insert: {
-          code: string
-          created_at?: string
-          id?: string
-          name: string
-          status?: Database["public"]["Enums"]["hospital_status"]
-        }
+          code: string;
+          created_at?: string;
+          id?: string;
+          name: string;
+          status?: Database["public"]["Enums"]["hospital_status"];
+        };
         Update: {
-          code?: string
-          created_at?: string
-          id?: string
-          name?: string
-          status?: Database["public"]["Enums"]["hospital_status"]
-        }
-        Relationships: []
-      }
+          code?: string;
+          created_at?: string;
+          id?: string;
+          name?: string;
+          status?: Database["public"]["Enums"]["hospital_status"];
+        };
+        Relationships: [];
+      };
       profiles: {
         Row: {
-          created_at: string
-          department: string | null
-          email: string
-          full_name: string
-          hospital_id: string | null
-          id: string
-          license_no: string | null
-          mobile: string | null
-          role: Database["public"]["Enums"]["app_role"]
-          specialty: string | null
-          status: Database["public"]["Enums"]["profile_status"]
-        }
+          created_at: string;
+          department: string | null;
+          email: string;
+          full_name: string;
+          hospital_id: string | null;
+          id: string;
+          license_no: string | null;
+          mobile: string | null;
+          role: Database["public"]["Enums"]["app_role"];
+          specialty: string | null;
+          status: Database["public"]["Enums"]["profile_status"];
+        };
         Insert: {
-          created_at?: string
-          department?: string | null
-          email: string
-          full_name?: string
-          hospital_id?: string | null
-          id: string
-          license_no?: string | null
-          mobile?: string | null
-          role?: Database["public"]["Enums"]["app_role"]
-          specialty?: string | null
-          status?: Database["public"]["Enums"]["profile_status"]
-        }
+          created_at?: string;
+          department?: string | null;
+          email: string;
+          full_name?: string;
+          hospital_id?: string | null;
+          id: string;
+          license_no?: string | null;
+          mobile?: string | null;
+          role?: Database["public"]["Enums"]["app_role"];
+          specialty?: string | null;
+          status?: Database["public"]["Enums"]["profile_status"];
+        };
         Update: {
-          created_at?: string
-          department?: string | null
-          email?: string
-          full_name?: string
-          hospital_id?: string | null
-          id?: string
-          license_no?: string | null
-          mobile?: string | null
-          role?: Database["public"]["Enums"]["app_role"]
-          specialty?: string | null
-          status?: Database["public"]["Enums"]["profile_status"]
-        }
+          created_at?: string;
+          department?: string | null;
+          email?: string;
+          full_name?: string;
+          hospital_id?: string | null;
+          id?: string;
+          license_no?: string | null;
+          mobile?: string | null;
+          role?: Database["public"]["Enums"]["app_role"];
+          specialty?: string | null;
+          status?: Database["public"]["Enums"]["profile_status"];
+        };
         Relationships: [
           {
-            foreignKeyName: "profiles_hospital_id_fkey"
-            columns: ["hospital_id"]
-            isOneToOne: false
-            referencedRelation: "hospitals"
-            referencedColumns: ["id"]
+            foreignKeyName: "profiles_hospital_id_fkey";
+            columns: ["hospital_id"];
+            isOneToOne: false;
+            referencedRelation: "hospitals";
+            referencedColumns: ["id"];
           },
-        ]
-      }
-    }
+        ];
+      };
+    };
     Views: {
-      [_ in never]: never
-    }
+      [_ in never]: never;
+    };
     Functions: {
-      current_hospital_id: { Args: never; Returns: string }
+      current_hospital_id: { Args: never; Returns: string };
       has_role: {
         Args: {
-          _role: Database["public"]["Enums"]["app_role"]
-          _user_id: string
-        }
-        Returns: boolean
-      }
-    }
+          _role: Database["public"]["Enums"]["app_role"];
+          _user_id: string;
+        };
+        Returns: boolean;
+      };
+      lookup_active_hospital: {
+        Args: { _code: string };
+        Returns: {
+          code: string;
+          id: string;
+          name: string;
+          status: Database["public"]["Enums"]["hospital_status"];
+        }[];
+      };
+    };
     Enums: {
       app_role:
         | "super_admin"
@@ -110,132 +113,130 @@ export type Database = {
         | "compounder"
         | "lab"
         | "pharmacist"
-        | "records_viewer"
-      hospital_status: "active" | "inactive"
-      profile_status: "pending" | "approved" | "rejected" | "suspended"
-    }
+        | "records_viewer";
+      hospital_status: "active" | "inactive";
+      profile_status: "pending" | "approved" | "rejected" | "suspended";
+    };
     CompositeTypes: {
-      [_ in never]: never
-    }
-  }
-}
+      [_ in never]: never;
+    };
+  };
+};
 
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">;
 
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">];
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
     : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
       DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
-      Row: infer R
+      Row: infer R;
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
-        Row: infer R
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] & DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R;
       }
       ? R
       : never
-    : never
+    : never;
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Insert: infer I
+      Insert: infer I;
     }
     ? I
     : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
     ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Insert: infer I
+        Insert: infer I;
       }
       ? I
       : never
-    : never
+    : never;
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Update: infer U
+      Update: infer U;
     }
     ? U
     : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
     ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Update: infer U
+        Update: infer U;
       }
       ? U
       : never
-    : never
+    : never;
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
   EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
     : never = never,
 > = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
     ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
-    : never
+    : never;
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
   CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
     : never = never,
 > = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
     ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-    : never
+    : never;
 
 export const Constants = {
   public: {
@@ -253,4 +254,4 @@ export const Constants = {
       profile_status: ["pending", "approved", "rejected", "suspended"],
     },
   },
-} as const
+} as const;

@@ -1,6 +1,4 @@
-export const SITE_URL =
-  (import.meta.env.VITE_MEDIFLOW_SITE_URL as string | undefined)?.replace(/\/$/, "") ||
-  "https://mediflowclinical.com";
+export const SITE_URL = "https://YOUR_DOMAIN_HERE";
 
 export const SITE = {
   name: "MediFlow Clinical",

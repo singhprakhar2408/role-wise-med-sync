@@ -87,10 +87,3 @@ BEGIN
   RETURN NEW;
 END; $$;
 CREATE TRIGGER profiles_before_insert BEFORE INSERT ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.enforce_pending_status();
-
--- Seed hospitals
-INSERT INTO public.hospitals (code, name, status) VALUES
-  ('HOSP001','MediFlow General Hospital','active'),
-  ('HOSP002','City Care Hospital','active'),
-  ('HOSP003','Sunrise Medical Center','active')
-ON CONFLICT (code) DO NOTHING;

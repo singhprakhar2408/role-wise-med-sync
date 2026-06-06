@@ -18,7 +18,8 @@ function Records() {
   const [q, setQ] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const user = currentUser();
-  const canSeeNotes = user?.role === "doctor" || user?.role === "hospital_admin" || user?.role === "super_admin";
+  const canSeeNotes =
+    user?.role === "doctor" || user?.role === "hospital_admin" || user?.role === "super_admin";
   const hospitalCode = user?.hospitalCode ?? "";
   const records = hospitalCode ? getPatientQueue(hospitalCode) : [];
   const labOrders = hospitalCode ? getLabOrders(hospitalCode) : [];

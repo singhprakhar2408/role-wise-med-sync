@@ -3,13 +3,8 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { SmartInput } from "@/components/SmartInput";
-import {
-  addPatientToQueue,
-  currentUser,
-  DOCTOR_SPECIALTIES,
-} from "@/lib/mediflow-store";
+import { addPatientToQueue, currentUser, DOCTOR_SPECIALTIES } from "@/lib/mediflow-store";
 import { useHospitalStaff } from "@/hooks/use-mediflow";
-
 
 export const Route = createFileRoute("/compounder")({
   head: () => ({ meta: [{ title: "Patient Intake — MediFlow Clinical" }] }),
@@ -62,10 +57,7 @@ interface SentIntake extends Intake {
 function Compounder() {
   const user = currentUser();
   const { staff } = useHospitalStaff(user?.hospitalId ?? null);
-  const doctors = useMemo(
-    () => staff.filter((s) => s.role === "doctor" && s.active),
-    [staff],
-  );
+  const doctors = useMemo(() => staff.filter((s) => s.role === "doctor" && s.active), [staff]);
 
   const [f, setF] = useState<Intake>({ ...empty, id: nextId(), doctorId: doctors[0]?.id ?? "" });
   const [queue, setQueue] = useState<SentIntake[]>([]);

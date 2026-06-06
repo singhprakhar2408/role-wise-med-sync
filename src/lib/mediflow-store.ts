@@ -1,6 +1,6 @@
-// MediFlow Clinical — production auth via Supabase + queue/lab/prescription
-// data still in localStorage (frontend-only demo data). Auth, hospital
-// verification, and profile/staff management are all Supabase-backed.
+// MediFlow Clinical — Supabase-backed auth, hospital verification, and
+// profile/staff management. Clinical workflow persistence still needs the
+// production Supabase tables in the launch runbook before real patient data use.
 
 import { supabase } from "@/integrations/supabase/client";
 
@@ -75,6 +75,38 @@ export interface StaffAccount {
 
 const PROFILE_CACHE_KEY = "mediflow.profile";
 const HOSPITAL_CACHE_KEY = "mediflow.hospitalCache";
+const OTP_CHANNEL = "sms" as const;
+const IS_PRODUCTION = import.meta.env.PROD;
+
+function blockClinicalBrowserStorage(action: string) {
+  if (IS_PRODUCTION) {
+    throw new Error(
+      `Blocked unsafe clinical browser storage in production: ${action}. Move this workflow to Supabase/Postgres with RLS before accepting real patient data.`,
+    );
+  }
+}
+
+export function normalizeMobile(mobile: string): string {
+  const normalized = mobile.replace(/[\s()-]/g, "").trim();
+  if (!/^\+[1-9]\d{7,14}$/.test(normalized)) {
+    throw new Error("Enter mobile in international format, for example +919876543210.");
+  }
+  return normalized;
+}
+
+function assertStrongPassword(password: string) {
+  if (password.length < 12) {
+    throw new Error("Password must be at least 12 characters.");
+  }
+  if (
+    !/[a-z]/.test(password) ||
+    !/[A-Z]/.test(password) ||
+    !/\d/.test(password) ||
+    !/\W/.test(password)
+  ) {
+    throw new Error("Password must include uppercase, lowercase, number, and symbol.");
+  }
+}
 
 interface ProfileRow {
   id: string;
@@ -117,16 +149,21 @@ function clearProfileCache() {
 
 // --- Hospital lookup (Supabase) ---
 export async function verifyHospitalCode(code: string): Promise<Hospital> {
-  const normalized = code.trim();
-  const { data, error } = await supabase
-    .from("hospitals")
-    .select("id, code, name, status")
-    .eq("code", normalized)
-    .eq("status", "active")
-    .maybeSingle();
+  const normalized = code.trim().toUpperCase();
+  if (normalized === "GLOBAL") {
+    return {
+      id: "00000000-0000-0000-0000-000000000000",
+      code: "GLOBAL",
+      name: "MediFlow Platform Administration",
+      status: "active",
+    };
+  }
+  const { data, error } = await supabase.rpc("lookup_active_hospital", {
+    _code: normalized,
+  });
   if (error) throw new Error(error.message);
-  if (!data) throw new Error("Hospital code not found or inactive.");
-  const hospital = data as Hospital;
+  const hospital = data?.[0] as Hospital | undefined;
+  if (!hospital) throw new Error("Hospital code not found or inactive.");
   if (typeof window !== "undefined") {
     const cache = JSON.parse(localStorage.getItem(HOSPITAL_CACHE_KEY) || "{}");
     cache[hospital.code] = hospital;
@@ -151,32 +188,22 @@ export async function listHospitals(): Promise<Hospital[]> {
   return (data ?? []) as Hospital[];
 }
 
-// --- Login ---
-export async function loginStaff(
-  hospitalCode: string,
-  email: string,
-  password: string,
-): Promise<StaffAccount> {
-  // 1. Verify hospital exists + active
-  const hospital = await verifyHospitalCode(hospitalCode);
-  // 2. Sign in
-  const { data: auth, error: authErr } = await supabase.auth.signInWithPassword({
-    email: email.trim(),
-    password,
-  });
-  if (authErr || !auth.user) throw new Error(authErr?.message || "Invalid credentials.");
-  // 3. Fetch profile
-  const { data: profile, error: profErr } = await supabase
+async function fetchCurrentProfileRow(): Promise<ProfileRow> {
+  const { data: session } = await supabase.auth.getSession();
+  const userId = session.session?.user.id;
+  if (!userId) throw new Error("No verified session found.");
+  const { data: profile, error } = await supabase
     .from("profiles")
     .select("*")
-    .eq("id", auth.user.id)
+    .eq("id", userId)
     .maybeSingle();
-  if (profErr || !profile) {
-    await supabase.auth.signOut();
-    throw new Error("Your profile is not set up. Contact administrator.");
-  }
-  const p = profile as ProfileRow;
-  // 4. Status checks
+  if (error) throw new Error(error.message);
+  if (!profile) throw new Error("Your profile is not set up. Contact administrator.");
+  return profile as ProfileRow;
+}
+
+async function accountForVerifiedProfile(hospital: Hospital): Promise<StaffAccount> {
+  const p = await fetchCurrentProfileRow();
   if (p.status === "pending") {
     await supabase.auth.signOut();
     throw new Error("Your account is awaiting administrator approval.");
@@ -189,14 +216,114 @@ export async function loginStaff(
     await supabase.auth.signOut();
     throw new Error("Your account has been suspended. Contact your hospital administrator.");
   }
-  // 5. Hospital match (super_admin exempt)
   if (p.role !== "super_admin" && p.hospital_id !== hospital.id) {
     await supabase.auth.signOut();
     throw new Error("This account does not belong to the selected hospital.");
   }
-  const account = rowToAccount(p, p.role === "super_admin" ? hospital.code : hospital.code);
+  const account = rowToAccount(p, p.role === "super_admin" ? "GLOBAL" : hospital.code);
   cacheProfile(account);
   return account;
+}
+
+// --- Login ---
+export async function loginStaff(
+  hospitalCode: string,
+  email: string,
+  password: string,
+): Promise<StaffAccount> {
+  const hospital = await verifyHospitalCode(hospitalCode);
+  const { data: auth, error: authErr } = await supabase.auth.signInWithPassword({
+    email: email.trim(),
+    password,
+  });
+  if (authErr || !auth.user) throw new Error(authErr?.message || "Invalid credentials.");
+  return accountForVerifiedProfile(hospital);
+}
+
+export async function sendMobileLoginOtp(hospitalCode: string, mobile: string): Promise<string> {
+  await verifyHospitalCode(hospitalCode);
+  const phone = normalizeMobile(mobile);
+  const { error } = await supabase.auth.signInWithOtp({
+    phone,
+    options: {
+      shouldCreateUser: false,
+      channel: OTP_CHANNEL,
+    },
+  });
+  if (error) throw new Error(error.message);
+  return phone;
+}
+
+export async function verifyMobileLoginOtp(
+  hospitalCode: string,
+  mobile: string,
+  token: string,
+): Promise<StaffAccount> {
+  const hospital = await verifyHospitalCode(hospitalCode);
+  const phone = normalizeMobile(mobile);
+  const { data, error } = await supabase.auth.verifyOtp({
+    phone,
+    token: token.trim(),
+    type: "sms",
+  });
+  if (error || !data.user) throw new Error(error?.message || "Invalid or expired OTP.");
+  return accountForVerifiedProfile(hospital);
+}
+
+export async function sendPasswordResetMobileOtp(
+  hospitalCode: string,
+  mobile: string,
+): Promise<string> {
+  return sendMobileLoginOtp(hospitalCode, mobile);
+}
+
+export async function resetPasswordWithMobileOtp(input: {
+  hospitalCode: string;
+  mobile: string;
+  token: string;
+  newPassword: string;
+}): Promise<StaffAccount> {
+  assertStrongPassword(input.newPassword);
+  const account = await verifyMobileLoginOtp(input.hospitalCode, input.mobile, input.token);
+  const { error } = await supabase.auth.updateUser({ password: input.newPassword });
+  if (error) throw new Error(error.message);
+  cacheProfile(account);
+  return account;
+}
+
+export async function sendRegistrationMobileOtp(mobile: string): Promise<string> {
+  const phone = normalizeMobile(mobile);
+  const { error } = await supabase.auth.signInWithOtp({
+    phone,
+    options: {
+      shouldCreateUser: true,
+      channel: OTP_CHANNEL,
+      data: { mediflow_registration: true },
+    },
+  });
+  if (error) throw new Error(error.message);
+  return phone;
+}
+
+export async function verifyRegistrationMobileOtp(mobile: string, token: string): Promise<string> {
+  const phone = normalizeMobile(mobile);
+  const { data, error } = await supabase.auth.verifyOtp({
+    phone,
+    token: token.trim(),
+    type: "sms",
+  });
+  if (error || !data.user) throw new Error(error?.message || "Invalid or expired OTP.");
+  const { data: existing, error: profileError } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", data.user.id)
+    .maybeSingle();
+  if (profileError) throw new Error(profileError.message);
+  if (existing) {
+    await supabase.auth.signOut();
+    throw new Error("This mobile number is already registered. Use mobile OTP sign-in instead.");
+  }
+  return phone;
 }
 
 // --- Register ---
@@ -216,34 +343,50 @@ export async function registerStaff(input: RegisterStaffInput): Promise<void> {
   if (!REGISTRABLE_ROLES.includes(input.role)) {
     throw new Error("Selected role is not allowed for self-registration.");
   }
+  assertStrongPassword(input.password);
   const hospital = await verifyHospitalCode(input.hospitalCode);
-  const { data: auth, error: authErr } = await supabase.auth.signUp({
-    email: input.email.trim(),
-    password: input.password,
-    options: {
-      emailRedirectTo: `${window.location.origin}/access`,
+  const phone = normalizeMobile(input.mobile);
+  const { data: session } = await supabase.auth.getSession();
+  const user = session.session?.user;
+  if (!user) throw new Error("Verify your registered mobile before submitting.");
+  if (user.phone !== phone) {
+    throw new Error("Verified mobile does not match the registration mobile.");
+  }
+
+  const { data: existing, error: existingErr } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (existingErr) throw new Error(existingErr.message);
+  if (existing) throw new Error("This staff account is already registered.");
+
+  const { error: updateErr } = await supabase.auth.updateUser(
+    {
+      email: input.email.trim(),
+      password: input.password,
       data: {
         full_name: input.fullName,
-        mobile: input.mobile,
+        mobile: phone,
       },
     },
-  });
-  if (authErr || !auth.user) throw new Error(authErr?.message || "Could not create account.");
+    {
+      emailRedirectTo: `${window.location.origin}/access`,
+    },
+  );
+  if (updateErr) throw new Error(updateErr.message);
 
-  // Insert profile (user is signed-in immediately on signUp when email confirm disabled)
   const { error: insErr } = await supabase.from("profiles").insert({
-    id: auth.user.id,
+    id: user.id,
     hospital_id: hospital.id,
     full_name: input.fullName,
     email: input.email.trim(),
-    mobile: input.mobile,
+    mobile: phone,
     role: input.role,
     department: input.department,
     specialty: input.specialty ?? null,
     license_no: input.licenseNo ?? null,
-    // status forced to 'pending' by DB trigger for non-super-admin
   });
-  // Sign back out so they wait for approval
   await supabase.auth.signOut();
   if (insErr) throw new Error(insErr.message);
 }
@@ -266,7 +409,11 @@ export async function refreshCurrentProfile(): Promise<StaffAccount | null> {
     return null;
   }
   const userId = session.session.user.id;
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
   if (!profile) {
     clearProfileCache();
     return null;
@@ -316,6 +463,19 @@ export async function fetchStaffForHospital(hospitalId: string): Promise<StaffAc
   return ((data ?? []) as ProfileRow[]).map((p) => rowToAccount(p, code));
 }
 
+export async function fetchAllStaff(): Promise<StaffAccount[]> {
+  const [staffResult, hospitals] = await Promise.all([
+    supabase.from("profiles").select("*").order("created_at", { ascending: false }),
+    listHospitals(),
+  ]);
+  if (staffResult.error) throw new Error(staffResult.error.message);
+  const byId = new Map(hospitals.map((hospital) => [hospital.id, hospital]));
+  return ((staffResult.data ?? []) as ProfileRow[]).map((p) => {
+    const hospital = p.hospital_id ? byId.get(p.hospital_id) : undefined;
+    return rowToAccount(p, p.role === "super_admin" ? "GLOBAL" : (hospital?.code ?? ""));
+  });
+}
+
 export async function setUserStatus(
   id: string,
   status: "approved" | "rejected" | "suspended",
@@ -324,20 +484,31 @@ export async function setUserStatus(
   if (error) throw new Error(error.message);
 }
 
+export async function setUserRole(id: string, role: Role): Promise<void> {
+  const { error } = await supabase.from("profiles").update({ role }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 // --- Hospitals admin (super_admin) ---
 export async function createHospital(code: string, name: string): Promise<Hospital> {
   const { data, error } = await supabase
     .from("hospitals")
-    .insert({ code: code.trim(), name: name.trim(), status: "active" })
+    .insert({ code: code.trim().toUpperCase(), name: name.trim(), status: "active" })
     .select("id, code, name, status")
     .single();
   if (error) throw new Error(error.message);
   return data as Hospital;
 }
 
+export async function setHospitalStatus(id: string, status: Hospital["status"]): Promise<void> {
+  const { error } = await supabase.from("hospitals").update({ status }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 // =====================================================================
-// Below: legacy localStorage-backed clinical data (queue / lab / rx).
-// Unchanged; this is demo workflow state, not user auth.
+// Below: temporary browser persistence for clinical queue / lab / prescription
+// state. Move these records to Supabase tables with hospital_id RLS before
+// accepting real patient data.
 // =====================================================================
 
 const KEY_LAB_ORDERS = "mediflow.labOrders";
@@ -427,6 +598,7 @@ export interface PrescriptionOrder {
 
 function read<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
+  if (IS_PRODUCTION) return fallback;
   try {
     const raw = localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
@@ -436,6 +608,7 @@ function read<T>(key: string, fallback: T): T {
 }
 function write<T>(key: string, val: T) {
   if (typeof window === "undefined") return;
+  blockClinicalBrowserStorage(`write ${key}`);
   localStorage.setItem(key, JSON.stringify(val));
 }
 
@@ -453,6 +626,7 @@ export function getPatientQueue(hospitalCode: string): PatientQueueRecord[] {
 export function addPatientToQueue(
   input: Omit<PatientQueueRecord, "createdAt" | "status"> & { status?: PatientQueueStatus },
 ) {
+  blockClinicalBrowserStorage("add patient queue record");
   const all = read<PatientQueueRecord[]>(KEY_PATIENT_QUEUE, []);
   const record: PatientQueueRecord = {
     ...input,
@@ -468,6 +642,7 @@ export function updatePatientQueueRecord(
   id: string,
   patch: Partial<PatientQueueRecord>,
 ) {
+  blockClinicalBrowserStorage("update patient queue record");
   const all = read<PatientQueueRecord[]>(KEY_PATIENT_QUEUE, []);
   savePatientQueue(
     all.map((p) => (p.hospitalCode === hospitalCode && p.id === id ? { ...p, ...patch } : p)),
@@ -507,6 +682,7 @@ export function addLabOrdersForPatient(input: {
   orderedById?: string;
   orderedByName?: string;
 }) {
+  blockClinicalBrowserStorage("add lab order");
   const all = read<LabOrder[]>(KEY_LAB_ORDERS, []);
   const now = Date.now();
   const newOrders = input.tests.map(
@@ -528,6 +704,7 @@ export function addLabOrdersForPatient(input: {
 }
 
 export function updateLabOrder(hospitalCode: string, id: string, patch: Partial<LabOrder>) {
+  blockClinicalBrowserStorage("update lab order or result");
   const all = read<LabOrder[]>(KEY_LAB_ORDERS, []);
   saveLabOrders(
     all.map((o) => (o.hospitalCode === hospitalCode && o.id === id ? { ...o, ...patch } : o)),
@@ -566,6 +743,7 @@ export function addPrescriptionForPatient(input: {
   orderedById?: string;
   orderedByName?: string;
 }) {
+  blockClinicalBrowserStorage("add prescription");
   const all = read<PrescriptionOrder[]>(KEY_PRESCRIPTIONS, []);
   const now = Date.now();
   const order: PrescriptionOrder = {
@@ -588,6 +766,7 @@ export function updatePrescriptionOrder(
   id: string,
   patch: Partial<PrescriptionOrder>,
 ) {
+  blockClinicalBrowserStorage("update prescription or pharmacy status");
   const all = read<PrescriptionOrder[]>(KEY_PRESCRIPTIONS, []);
   savePrescriptions(
     all.map((o) => (o.hospitalCode === hospitalCode && o.id === id ? { ...o, ...patch } : o)),

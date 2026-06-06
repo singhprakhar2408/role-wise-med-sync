@@ -1,4 +1,12 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://mediflowclinical.com/sitemap.xml
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /patients
+Disallow: /records
+Disallow: /staff-requests
+Disallow: /lab
+Disallow: /pharmacy
+
+Sitemap: https://YOUR_DOMAIN_HERE/sitemap.xml

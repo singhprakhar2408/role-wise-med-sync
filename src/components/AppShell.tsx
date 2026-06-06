@@ -15,7 +15,7 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
   const admin = ["hospital_admin", "super_admin"];
   const nav: Array<{ to: string; label: string; roles: Array<string> }> = [
     { to: "/dashboard", label: "Dashboard", roles: admin },
-    { to: "/staff-requests", label: "Staff Requests", roles: admin },
+    { to: "/staff-requests", label: "Admin Operations", roles: admin },
     { to: "/compounder", label: "Intake", roles: ["compounder", ...admin] },
     { to: "/doctor", label: "Doctor Queue", roles: ["doctor", ...admin] },
     { to: "/lab", label: "Laboratory", roles: ["lab", ...admin] },
@@ -27,7 +27,6 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
     },
   ];
   const items = nav.filter((n) => n.roles.includes(user.role));
-
 
   return (
     <div className="min-h-screen flex">
