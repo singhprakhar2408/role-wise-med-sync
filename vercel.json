@@ -1,5 +1,11 @@
-{
-  "buildCommand": "npm run build",
+
+  "installCommand": "npm install --legacy-peer-deps",
+  "outputDirectory": ".output/public",
+  "framework": "nitro",
+  "env": {
+    "VITE_MEDIFLOW_HOSPITALS": "@VITE_MEDIFLOW_HOSPITALS",
+    "VITE_MEDIFLOW_SITE_URL": "@VITE_MEDIFLOW_SITE_URL"
+=======
   "devCommand": "npm run dev",
   "installCommand": "npm install --legacy-peer-deps",
   "framework": "other",
@@ -12,5 +18,3 @@
     "VITE_MEDIFLOW_SITE_URL": {
       "description": "Site URL for hospital access"
     }
-  }
-}
