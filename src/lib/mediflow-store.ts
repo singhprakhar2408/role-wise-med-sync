@@ -244,6 +244,13 @@ export async function loginStaff(
   return accountForVerifiedProfile(hospital);
 }
 
+export async function sendPasswordResetEmail(email: string): Promise<void> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: `${window.location.origin}/access`,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function sendMobileLoginOtp(hospitalCode: string, mobile: string): Promise<string> {
   await verifyHospitalCode(hospitalCode);
   const normalizedPhone = normalizeMobile(mobile);
@@ -346,52 +353,35 @@ export async function registerStaff(input: RegisterStaffInput): Promise<void> {
   const email = input.email.trim();
   const emailRedirectTo = `${window.location.origin}/access`;
   const { data: session } = await supabase.auth.getSession();
-  let userId = session.session?.user.id;
+  if (session.session?.user) {
+    await supabase.auth.signOut();
+  }
 
-  if (session.session?.user.phone === phone) {
-    const { data: updated, error: updateErr } = await supabase.auth.updateUser(
-      {
-        email,
-        password: input.password,
-        data: {
-          full_name: input.fullName,
-          mobile: phone,
-        },
+  const { data: signedUp, error: signUpErr } = await supabase.auth.signUp({
+    email,
+    password: input.password,
+    options: {
+      emailRedirectTo,
+      data: {
+        full_name: input.fullName,
+        mobile: phone,
       },
-      { emailRedirectTo },
-    );
-    if (updateErr) throw new Error(updateErr.message);
-    userId = updated.user?.id ?? userId;
-  } else {
-    if (session.session?.user) {
-      await supabase.auth.signOut();
-    }
-    const { data: signedUp, error: signUpErr } = await supabase.auth.signUp({
+    },
+  });
+  if (signUpErr) throw new Error(signUpErr.message);
+  let userId = signedUp.user?.id;
+
+  if (!signedUp.session) {
+    const { data: signedIn, error: signInErr } = await supabase.auth.signInWithPassword({
       email,
       password: input.password,
-      options: {
-        emailRedirectTo,
-        data: {
-          full_name: input.fullName,
-          mobile: phone,
-        },
-      },
     });
-    if (signUpErr) throw new Error(signUpErr.message);
-    userId = signedUp.user?.id;
-
-    if (!signedUp.session) {
-      const { data: signedIn, error: signInErr } = await supabase.auth.signInWithPassword({
-        email,
-        password: input.password,
-      });
-      if (signInErr || !signedIn.user) {
-        throw new Error(
-          "Account created, but a registration session was not available. Confirm email or disable email confirmation for the demo, then try again.",
-        );
-      }
-      userId = signedIn.user.id;
+    if (signInErr || !signedIn.user) {
+      throw new Error(
+        "Account created, but a registration session was not available. Confirm email or disable email confirmation for the demo, then try again.",
+      );
     }
+    userId = signedIn.user.id;
   }
 
   if (!userId) throw new Error("Unable to create staff auth account.");

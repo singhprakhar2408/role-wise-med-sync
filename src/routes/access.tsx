@@ -6,8 +6,6 @@ import {
   KeyRound,
   LockKeyhole,
   Mail,
-  MessageSquareText,
-  Phone,
   ShieldCheck,
   UserPlus,
 } from "lucide-react";
@@ -16,13 +14,8 @@ import { toast } from "sonner";
 import { BrandMark } from "@/components/AppShell";
 import {
   loginStaff,
-  resetPasswordWithMobileOtp,
   registerStaff,
-  sendMobileLoginOtp,
-  sendPasswordResetMobileOtp,
-  sendRegistrationMobileOtp,
-  verifyMobileLoginOtp,
-  verifyRegistrationMobileOtp,
+  sendPasswordResetEmail,
   verifyHospitalCode,
   DOCTOR_SPECIALTIES,
   REGISTRABLE_ROLES,
@@ -166,12 +159,12 @@ function Access() {
                           <span>
                             <span className="block text-sm font-semibold">Existing staff</span>
                             <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                              Use email/password or registered mobile OTP.
+                              Use approved email/password access.
                             </span>
                           </span>
                         </div>
                         <div className="mt-4 rounded-xl bg-white/[0.07] px-3 py-2 text-xs font-medium text-primary">
-                          Password + mobile OTP sign-in
+                          Email/password sign-in
                         </div>
                       </button>
                       <button
@@ -247,25 +240,20 @@ function LoginForm({
   onDone: (r: Role) => void;
   onBack: () => void;
 }) {
-  const [mode, setMode] = useState<"password" | "mobile" | "reset">("password");
+  const [mode, setMode] = useState<"password" | "reset">("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
-  const [mobile, setMobile] = useState("");
-  const [mobileOtp, setMobileOtp] = useState("");
-  const [mobileOtpSent, setMobileOtpSent] = useState(false);
-  const [mobileOtpPhone, setMobileOtpPhone] = useState("");
-  const [resetMobile, setResetMobile] = useState("");
-  const [resetOtp, setResetOtp] = useState("");
-  const [resetOtpSent, setResetOtpSent] = useState(false);
-  const [resetOtpPhone, setResetOtpPhone] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetNotice, setResetNotice] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const clearError = () => setErr("");
+  const clearMessages = () => {
+    setErr("");
+    setResetNotice("");
+  };
 
   const signInWithPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -281,69 +269,15 @@ function LoginForm({
     }
   };
 
-  const sendLoginOtp = async () => {
-    setLoading(true);
-    try {
-      const phone = await sendMobileLoginOtp(hospitalCode, mobile);
-      setMobile(phone);
-      setMobileOtpPhone(phone);
-      setMobileOtp("");
-      setMobileOtpSent(true);
-      setErr("");
-      toast.success(`OTP sent to ${phone}`);
-    } catch (x: unknown) {
-      setErr((x as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const signInWithMobileOtp = async (e: React.FormEvent) => {
+  const resetWithEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const u = await verifyMobileLoginOtp(hospitalCode, mobileOtpPhone, mobileOtp);
-      onDone(u.role);
-    } catch (x: unknown) {
-      setErr((x as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const sendResetOtp = async () => {
-    setLoading(true);
-    try {
-      const phone = await sendPasswordResetMobileOtp(hospitalCode, resetMobile);
-      setResetMobile(phone);
-      setResetOtpPhone(phone);
-      setResetOtp("");
-      setResetOtpSent(true);
+      await sendPasswordResetEmail(resetEmail);
+      const message = "Password reset link sent to your email if the account exists.";
       setErr("");
-      toast.success(`Password reset OTP sent to ${phone}`);
-    } catch (x: unknown) {
-      setErr((x as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const resetWithMobileOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPassword !== confirmPassword) {
-      setErr("Passwords do not match.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const u = await resetPasswordWithMobileOtp({
-        hospitalCode,
-        mobile: resetOtpPhone,
-        token: resetOtp,
-        newPassword,
-      });
-      toast.success("Password changed successfully");
-      onDone(u.role);
+      setResetNotice(message);
+      toast.success(message);
     } catch (x: unknown) {
       setErr((x as Error).message);
     } finally {
@@ -369,7 +303,7 @@ function LoginForm({
           </div>
           <h2 className="mt-1 text-2xl">Sign in securely</h2>
           <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-            Use email/password or a one-time code sent to your registered mobile number.
+            Use your approved email/password access.
           </p>
         </div>
         <div className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs text-primary">
@@ -378,23 +312,14 @@ function LoginForm({
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-1.5">
+      <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-1.5">
         <AuthModeButton
           active={mode === "password"}
           icon={<Mail className="size-4" aria-hidden="true" />}
           label="Email"
           onClick={() => {
             setMode("password");
-            clearError();
-          }}
-        />
-        <AuthModeButton
-          active={mode === "mobile"}
-          icon={<MessageSquareText className="size-4" aria-hidden="true" />}
-          label="Mobile OTP"
-          onClick={() => {
-            setMode("mobile");
-            clearError();
+            clearMessages();
           }}
         />
         <AuthModeButton
@@ -403,7 +328,7 @@ function LoginForm({
           label="Reset"
           onClick={() => {
             setMode("reset");
-            clearError();
+            clearMessages();
           }}
         />
       </div>
@@ -475,153 +400,36 @@ function LoginForm({
         </form>
       )}
 
-      {mode === "mobile" && (
-        <form onSubmit={signInWithMobileOtp} className="mt-5 space-y-4">
-          <Field label="Registered mobile">
-            <div className="flex gap-2">
-              <div className="relative min-w-0 flex-1">
-                <Phone
-                  className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                <input
-                  required
-                  value={mobile}
-                  onChange={(e) => {
-                    setMobile(e.target.value);
-                    setMobileOtpPhone("");
-                    setMobileOtpSent(false);
-                    setMobileOtp("");
-                    setErr("");
-                  }}
-                  placeholder="+919876543210"
-                  autoComplete="tel"
-                  className="input pl-10"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={sendLoginOtp}
-                disabled={loading}
-                className="rounded-xl border border-white/10 px-3 text-xs transition-colors hover:bg-white/5 disabled:opacity-50"
-              >
-                {mobileOtpSent ? "Resend" : "Send OTP"}
-              </button>
+      {mode === "reset" && (
+        <form onSubmit={resetWithEmail} className="mt-5 space-y-4">
+          <Field label="Registered email">
+            <div className="relative">
+              <Mail
+                className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <input
+                type="email"
+                required
+                value={resetEmail}
+                onChange={(e) => {
+                  setResetEmail(e.target.value);
+                  clearMessages();
+                }}
+                placeholder="name@hospital.org"
+                autoComplete="email"
+                className="input pl-10"
+              />
             </div>
           </Field>
-          {mobileOtpSent && (
-            <Field label="OTP code">
-              <input
-                required
-                value={mobileOtp}
-                onChange={(e) => {
-                  setMobileOtp(e.target.value);
-                  setErr("");
-                }}
-                inputMode="numeric"
-                maxLength={6}
-                placeholder="6-digit code"
-                autoComplete="one-time-code"
-                className="input font-mono tracking-widest"
-              />
-            </Field>
-          )}
-          <LoginSubmit
-            loading={loading}
-            disabled={!mobileOtpSent}
-            label="Verify and sign in"
-            loadingLabel="Verifying..."
-          />
+          <LoginSubmit loading={loading} label="Send reset link" loadingLabel="Sending..." />
         </form>
       )}
 
-      {mode === "reset" && (
-        <form onSubmit={resetWithMobileOtp} className="mt-5 space-y-4">
-          <Field label="Registered mobile">
-            <div className="flex gap-2">
-              <div className="relative min-w-0 flex-1">
-                <Phone
-                  className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                <input
-                  required
-                  value={resetMobile}
-                  onChange={(e) => {
-                    setResetMobile(e.target.value);
-                    setResetOtpPhone("");
-                    setResetOtpSent(false);
-                    setResetOtp("");
-                    setErr("");
-                  }}
-                  placeholder="+919876543210"
-                  autoComplete="tel"
-                  className="input pl-10"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={sendResetOtp}
-                disabled={loading}
-                className="rounded-xl border border-white/10 px-3 text-xs transition-colors hover:bg-white/5 disabled:opacity-50"
-              >
-                {resetOtpSent ? "Resend" : "Send OTP"}
-              </button>
-            </div>
-          </Field>
-          {resetOtpSent && (
-            <>
-              <Field label="OTP code">
-                <input
-                  required
-                  value={resetOtp}
-                  onChange={(e) => {
-                    setResetOtp(e.target.value);
-                    setErr("");
-                  }}
-                  inputMode="numeric"
-                  maxLength={6}
-                  placeholder="6-digit code"
-                  autoComplete="one-time-code"
-                  className="input font-mono tracking-widest"
-                />
-              </Field>
-              <Field label="New password">
-                <input
-                  type="password"
-                  required
-                  value={newPassword}
-                  onChange={(e) => {
-                    setNewPassword(e.target.value);
-                    setErr("");
-                  }}
-                  placeholder="12+ chars, mixed case, number, symbol"
-                  autoComplete="new-password"
-                  className="input"
-                />
-              </Field>
-              <Field label="Confirm new password">
-                <input
-                  type="password"
-                  required
-                  value={confirmPassword}
-                  onChange={(e) => {
-                    setConfirmPassword(e.target.value);
-                    setErr("");
-                  }}
-                  autoComplete="new-password"
-                  className="input"
-                />
-              </Field>
-            </>
-          )}
-          <LoginSubmit
-            loading={loading}
-            disabled={!resetOtpSent}
-            label="Change password"
-            loadingLabel="Changing..."
-          />
-        </form>
+      {resetNotice && (
+        <div className="mt-4 rounded-xl border border-success/25 bg-success/10 px-3 py-2.5 text-sm text-success">
+          {resetNotice}
+        </div>
       )}
 
       {err && (
@@ -705,48 +513,7 @@ function RegisterForm({
     confirm: "",
   });
   const [err, setErr] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpInput, setOtpInput] = useState("");
-  const [otpPhone, setOtpPhone] = useState("");
-  const [otpVerified, setOtpVerified] = useState(false);
-  const [verifiedMobile, setVerifiedMobile] = useState("");
-  const [otpLoading, setOtpLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-
-  const sendOtp = async () => {
-    setOtpLoading(true);
-    try {
-      const phone = await sendRegistrationMobileOtp(f.mobile);
-      setF((current) => ({ ...current, mobile: phone }));
-      setOtpPhone(phone);
-      setOtpInput("");
-      setOtpSent(true);
-      setErr("");
-      toast.success(`OTP sent to ${phone}`);
-    } catch (x: unknown) {
-      setErr((x as Error).message);
-    } finally {
-      setOtpLoading(false);
-    }
-  };
-  const verifyOtp = async () => {
-    if (!otpPhone) {
-      setErr("Send OTP before verifying.");
-      return;
-    }
-    setOtpLoading(true);
-    try {
-      const normalizedPhone = await verifyRegistrationMobileOtp(otpPhone, otpInput);
-      setOtpVerified(true);
-      setVerifiedMobile(normalizedPhone);
-      setErr("");
-      toast.success("Mobile verified");
-    } catch {
-      setErr("OTP verification is optional for now. You can still submit for admin approval.");
-    } finally {
-      setOtpLoading(false);
-    }
-  };
 
   return (
     <form
@@ -761,7 +528,6 @@ function RegisterForm({
           const { specialty, ...base } = f;
           await registerStaff({
             ...base,
-            mobile: verifiedMobile || base.mobile,
             hospitalCode,
             ...(base.role === "doctor" ? { specialty } : {}),
           });
@@ -804,60 +570,13 @@ function RegisterForm({
           />
         </Field>
         <Field label="Mobile">
-          <div className="flex gap-2">
-            <input
-              required
-              value={f.mobile}
-              onChange={(e) => {
-                setF({ ...f, mobile: e.target.value });
-                setOtpVerified(false);
-                setVerifiedMobile("");
-                setOtpSent(false);
-                setOtpPhone("");
-                setOtpInput("");
-              }}
-              className="input flex-1"
-            />
-            <button
-              type="button"
-              onClick={sendOtp}
-              disabled={otpVerified || otpLoading}
-              className="rounded-xl px-3 text-xs border border-white/10 hover:bg-white/5 disabled:opacity-40 whitespace-nowrap"
-            >
-              {otpLoading
-                ? "Sending..."
-                : otpVerified
-                  ? "✓ Verified"
-                  : otpSent
-                    ? "Resend"
-                    : "Send OTP"}
-            </button>
-          </div>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-            Mobile OTP is optional during setup. Hospital admin will verify staff before approval.
-          </p>
+          <input
+            required
+            value={f.mobile}
+            onChange={(e) => setF({ ...f, mobile: e.target.value })}
+            className="input"
+          />
         </Field>
-        {otpSent && !otpVerified && (
-          <Field label="Enter OTP" full>
-            <div className="flex gap-2">
-              <input
-                value={otpInput}
-                onChange={(e) => setOtpInput(e.target.value)}
-                maxLength={6}
-                placeholder="6-digit code"
-                className="input flex-1 font-mono tracking-widest"
-              />
-              <button
-                type="button"
-                onClick={verifyOtp}
-                disabled={otpLoading || !otpPhone}
-                className="rounded-xl px-4 text-xs btn-primary disabled:opacity-60"
-              >
-                {otpLoading ? "Verifying..." : "Verify"}
-              </button>
-            </div>
-          </Field>
-        )}
         <Field label="Role">
           <select
             value={f.role}
