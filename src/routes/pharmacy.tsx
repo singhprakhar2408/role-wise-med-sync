@@ -18,29 +18,44 @@ export const Route = createFileRoute("/pharmacy")({
 function Pharmacy() {
   const user = currentUser();
   const hospitalCode = user?.hospitalCode ?? "";
-  const [rx, setRx] = useState<PrescriptionOrder[]>(() =>
-    hospitalCode ? getPrescriptionOrders(hospitalCode) : [],
-  );
+  const [rx, setRx] = useState<PrescriptionOrder[]>([]);
   const pending = useMemo(() => rx.filter((r) => r.status === "pending"), [rx]);
   const dispensed = useMemo(() => rx.filter((r) => r.status === "dispensed"), [rx]);
 
   useEffect(() => {
     if (!hospitalCode) return;
-    const refresh = () => setRx(getPrescriptionOrders(hospitalCode));
-    refresh();
-    return subscribePrescriptionOrders(refresh);
+    let cancelled = false;
+    const refresh = () => {
+      getPrescriptionOrders(hospitalCode)
+        .then((rows) => {
+          if (!cancelled) setRx(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setRx([]);
+        });
+    };
+    void refresh();
+    const unsubscribe = subscribePrescriptionOrders(refresh);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [hospitalCode]);
 
-  const markDispensed = (order: PrescriptionOrder) => {
+  const markDispensed = async (order: PrescriptionOrder) => {
     if (!hospitalCode) return;
-    updatePrescriptionOrder(hospitalCode, order.id, {
-      status: "dispensed",
-      dispensedAt: Date.now(),
-      dispensedById: user?.id,
-      dispensedByName: user?.fullName,
-    });
-    setRx(getPrescriptionOrders(hospitalCode));
-    toast.success("Marked dispensed", { description: `${order.patient} · ${order.id}` });
+    try {
+      await updatePrescriptionOrder(hospitalCode, order.id, {
+        status: "dispensed",
+        dispensedAt: Date.now(),
+        dispensedById: user?.id,
+        dispensedByName: user?.fullName,
+      });
+      setRx(await getPrescriptionOrders(hospitalCode));
+      toast.success("Marked dispensed", { description: `${order.patient} · ${order.id}` });
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
   };
 
   return (

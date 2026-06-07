@@ -19,11 +19,13 @@ import {
   getPrescriptionOrders,
   subscribeLabOrders,
   subscribePatientQueue,
+  subscribePrescriptionOrders,
   updatePatientQueueRecord,
   type LabOrder,
   type PatientQueueRecord,
   type PatientQueueStatus,
   type PrescriptionItem,
+  type PrescriptionOrder,
 } from "@/lib/mediflow-store";
 
 export const Route = createFileRoute("/doctor")({
@@ -68,28 +70,79 @@ type Tab = (typeof TABS)[number];
 function Doctor() {
   const user = currentUser();
   const hospitalCode = user?.hospitalCode ?? "";
-  const [queue, setQueue] = useState<QP[]>(() =>
-    hospitalCode ? getPatientQueue(hospitalCode) : [],
-  );
+  const [queue, setQueue] = useState<QP[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("Review");
   const [closeOpen, setCloseOpen] = useState(false);
-  const [labOrders, setLabOrders] = useState<LabOrder[]>(() =>
-    hospitalCode ? getLabOrders(hospitalCode) : [],
-  );
+  const [labOrders, setLabOrders] = useState<LabOrder[]>([]);
+  const [prescriptions, setPrescriptions] = useState<PrescriptionOrder[]>([]);
 
   useEffect(() => {
     if (!hospitalCode) return;
-    const refresh = () => setQueue(getPatientQueue(hospitalCode));
-    refresh();
-    return subscribePatientQueue(refresh);
+    let cancelled = false;
+    const refresh = () => {
+      getPatientQueue(hospitalCode)
+        .then((rows) => {
+          if (!cancelled) setQueue(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setQueue([]);
+        });
+    };
+    void refresh();
+    const unsubscribe = subscribePatientQueue(refresh);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [hospitalCode]);
 
   useEffect(() => {
     if (!hospitalCode) return;
-    const refresh = () => setLabOrders(getLabOrders(hospitalCode));
-    refresh();
-    return subscribeLabOrders(refresh);
+    let cancelled = false;
+    const refresh = () => {
+      getLabOrders(hospitalCode)
+        .then((rows) => {
+          if (!cancelled) setLabOrders(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setLabOrders([]);
+        });
+    };
+    void refresh();
+    const unsubscribe = subscribeLabOrders(refresh);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [hospitalCode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!hospitalCode) {
+      setPrescriptions([]);
+      return;
+    }
+    getPrescriptionOrders(hospitalCode)
+      .then((rows) => {
+        if (!cancelled) setPrescriptions(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setPrescriptions([]);
+      });
+    const unsubscribe = subscribePrescriptionOrders(() => {
+      getPrescriptionOrders(hospitalCode)
+        .then((rows) => {
+          if (!cancelled) setPrescriptions(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setPrescriptions([]);
+        });
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [hospitalCode]);
 
   useEffect(() => {
@@ -111,10 +164,7 @@ function Doctor() {
         .sort((a, b) => (b.completedAt ?? b.orderedAt) - (a.completedAt ?? a.orderedAt))
     : [];
   const selectedUploadedReports = selectedLabOrders.filter((o) => o.status === "report_uploaded");
-  const selectedPrescriptions =
-    p && hospitalCode
-      ? getPrescriptionOrders(hospitalCode).filter((o) => o.patientId === p.id)
-      : [];
+  const selectedPrescriptions = p ? prescriptions.filter((o) => o.patientId === p.id) : [];
   const clinicalRecognition = p
     ? analyzeClinicalDescription({
         description: patientClinicalDescription(p),
@@ -128,18 +178,28 @@ function Doctor() {
     : null;
   const setStatus = (id: string, s: Status) =>
     setQueue((q) => q.map((x) => (x.id === id ? { ...x, status: s } : x)));
-  const updateStatus = (id: string, s: Status) => {
+  const updateStatus = async (id: string, s: Status) => {
     setStatus(id, s);
-    if (hospitalCode) updatePatientQueueRecord(hospitalCode, id, { status: s });
+    if (!hospitalCode) return;
+    try {
+      await updatePatientQueueRecord(hospitalCode, id, { status: s });
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
   };
-  const removeFromQueue = (id: string) => {
+  const removeFromQueue = async (id: string) => {
     setQueue((q) => q.filter((x) => x.id !== id));
-    if (hospitalCode) updatePatientQueueRecord(hospitalCode, id, { status: "closed" });
+    if (!hospitalCode) return;
+    try {
+      await updatePatientQueueRecord(hospitalCode, id, { status: "closed" });
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
   };
 
   const onClosed = (mode: "followup" | "admit" | "all_fine", extra?: string) => {
     if (!p) return;
-    updateStatus(p.id, "closed");
+    void updateStatus(p.id, "closed");
     setCloseOpen(false);
     if (mode === "followup")
       toast.success("File closed · Follow-up scheduled", { description: `${p.name} → ${extra}` });
@@ -330,39 +390,48 @@ function Doctor() {
                 )}
                 {tab === "Tests" && (
                   <Tests
-                    onSent={(tests) => {
-                      addLabOrdersForPatient({
-                        hospitalCode,
-                        patientId: p.id,
-                        patient: p.name,
-                        tests,
-                        orderedById: user?.id,
-                        orderedByName: user?.fullName,
-                      });
-                      setLabOrders(getLabOrders(hospitalCode));
-                      updateStatus(p.id, "lab_pending");
-                      toast.success("Sent to Laboratory", {
-                        description: `${p.name} · ${tests.length} test${tests.length === 1 ? "" : "s"} awaiting report`,
-                      });
+                    onSent={async (tests) => {
+                      try {
+                        await addLabOrdersForPatient({
+                          hospitalCode,
+                          patientId: p.id,
+                          patient: p.name,
+                          tests,
+                          orderedById: user?.id,
+                          orderedByName: user?.fullName,
+                        });
+                        setLabOrders(await getLabOrders(hospitalCode));
+                        await updateStatus(p.id, "lab_pending");
+                        toast.success("Sent to Laboratory", {
+                          description: `${p.name} · ${tests.length} test${tests.length === 1 ? "" : "s"} awaiting report`,
+                        });
+                      } catch (error) {
+                        toast.error((error as Error).message);
+                      }
                     }}
                   />
                 )}
                 {tab === "Lab Reports" && <LabReports orders={selectedLabOrders} />}
                 {tab === "Prescription" && (
                   <Prescription
-                    onSent={(items) => {
-                      addPrescriptionForPatient({
-                        hospitalCode,
-                        patientId: p.id,
-                        patient: p.name,
-                        items,
-                        orderedById: user?.id,
-                        orderedByName: user?.fullName,
-                      });
-                      updateStatus(p.id, "pharmacy_pending");
-                      toast.success("Sent to Pharmacy", {
-                        description: `${p.name} · prescription queued`,
-                      });
+                    onSent={async (items) => {
+                      try {
+                        await addPrescriptionForPatient({
+                          hospitalCode,
+                          patientId: p.id,
+                          patient: p.name,
+                          items,
+                          orderedById: user?.id,
+                          orderedByName: user?.fullName,
+                        });
+                        setPrescriptions(await getPrescriptionOrders(hospitalCode));
+                        await updateStatus(p.id, "pharmacy_pending");
+                        toast.success("Sent to Pharmacy", {
+                          description: `${p.name} · prescription queued`,
+                        });
+                      } catch (error) {
+                        toast.error((error as Error).message);
+                      }
                     }}
                   />
                 )}
@@ -393,7 +462,9 @@ function Doctor() {
           patient={p}
           onClose={() => setCloseOpen(false)}
           onDone={onClosed}
-          onAdmitted={() => removeFromQueue(p.id)}
+          onAdmitted={() => {
+            void removeFromQueue(p.id);
+          }}
         />
       )}
     </AppShell>
@@ -769,7 +840,7 @@ function ClinicalList({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-function Tests({ onSent }: { onSent: (tests: string[]) => void }) {
+function Tests({ onSent }: { onSent: (tests: string[]) => void | Promise<void> }) {
   const [list, setList] = useState<string[]>([]);
   const [t, setT] = useState("");
   const send = () => {
@@ -777,7 +848,7 @@ function Tests({ onSent }: { onSent: (tests: string[]) => void }) {
       toast.error("Add at least one test");
       return;
     }
-    onSent(list);
+    void onSent(list);
     setList([]);
     setT("");
   };
@@ -908,7 +979,7 @@ function LabReports({ orders }: { orders: LabOrder[] }) {
   );
 }
 
-function Prescription({ onSent }: { onSent: (items: PrescriptionItem[]) => void }) {
+function Prescription({ onSent }: { onSent: (items: PrescriptionItem[]) => void | Promise<void> }) {
   const [rows, setRows] = useState<
     Array<{
       med: string;
@@ -938,7 +1009,7 @@ function Prescription({ onSent }: { onSent: (items: PrescriptionItem[]) => void 
       toast.error("Add at least one medicine");
       return;
     }
-    onSent(items);
+    void onSent(items);
     setRows([{ med: "", salt: "", dose: "", freq: "", days: "", route: "", instr: "" }]);
   };
   return (
@@ -1018,7 +1089,7 @@ function History({
 }: {
   patient: QP;
   labOrders: LabOrder[];
-  prescriptions: ReturnType<typeof getPrescriptionOrders>;
+  prescriptions: PrescriptionOrder[];
 }) {
   const items = [
     {

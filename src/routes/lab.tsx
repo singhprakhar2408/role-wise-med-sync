@@ -31,36 +31,51 @@ const PRIO: Record<LabOrder["priority"], string> = {
 function Lab() {
   const user = currentUser();
   const hospitalCode = user?.hospitalCode ?? "";
-  const [orders, setOrders] = useState<LabOrder[]>(() =>
-    hospitalCode ? getLabOrders(hospitalCode) : [],
-  );
+  const [orders, setOrders] = useState<LabOrder[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [summary, setSummary] = useState("");
 
   useEffect(() => {
     if (!hospitalCode) return;
-    const refresh = () => setOrders(getLabOrders(hospitalCode));
-    refresh();
-    return subscribeLabOrders(refresh);
+    let cancelled = false;
+    const refresh = () => {
+      getLabOrders(hospitalCode)
+        .then((rows) => {
+          if (!cancelled) setOrders(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setOrders([]);
+        });
+    };
+    void refresh();
+    const unsubscribe = subscribeLabOrders(refresh);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [hospitalCode]);
 
-  const upd = (id: string, patch: Partial<LabOrder>) => {
+  const upd = async (id: string, patch: Partial<LabOrder>) => {
     if (!hospitalCode) return;
-    updateLabOrder(hospitalCode, id, patch);
-    setOrders(getLabOrders(hospitalCode));
+    try {
+      await updateLabOrder(hospitalCode, id, patch);
+      setOrders(await getLabOrders(hospitalCode));
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
   };
 
   const active = useMemo(() => orders.filter((o) => o.status !== "report_uploaded"), [orders]);
   const done = useMemo(() => orders.filter((o) => o.status === "report_uploaded"), [orders]);
 
-  const sendReport = (id: string) => {
+  const sendReport = async (id: string) => {
     const o = orders.find((x) => x.id === id);
     if (!o) return;
     if (!summary.trim()) {
       toast.error("Add a short report summary first");
       return;
     }
-    upd(id, {
+    await upd(id, {
       status: "report_uploaded",
       summary,
       completedAt: Date.now(),
@@ -179,7 +194,9 @@ function Lab() {
                       Cancel
                     </button>
                     <button
-                      onClick={() => sendReport(o.id)}
+                      onClick={() => {
+                        void sendReport(o.id);
+                      }}
                       className="btn-primary text-xs px-3 py-1.5 rounded-lg"
                     >
                       Send Report to Doctor →

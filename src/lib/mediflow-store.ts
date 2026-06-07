@@ -1,6 +1,5 @@
-// MediFlow Clinical — Supabase-backed auth, hospital verification, and
-// profile/staff management. Clinical workflow persistence still needs the
-// production Supabase tables in the launch runbook before real patient data use.
+// MediFlow Clinical — Supabase-backed auth, hospital verification,
+// profile/staff management, and clinical workflow persistence.
 
 import { supabase } from "@/integrations/supabase/client";
 
@@ -78,7 +77,7 @@ const HOSPITAL_CACHE_KEY = "mediflow.hospitalCache";
 const OTP_CHANNEL = "sms" as const;
 const IS_PRODUCTION = import.meta.env.PROD;
 
-function blockClinicalBrowserStorage(action: string) {
+export function blockClinicalBrowserStorage(action: string) {
   if (IS_PRODUCTION) {
     throw new Error(
       `Blocked unsafe clinical browser storage in production: ${action}. Move this workflow to Supabase/Postgres with RLS before accepting real patient data.`,
@@ -506,17 +505,10 @@ export async function setHospitalStatus(id: string, status: Hospital["status"]):
 }
 
 // =====================================================================
-// Below: temporary browser persistence for clinical queue / lab / prescription
-// state. Move these records to Supabase tables with hospital_id RLS before
-// accepting real patient data.
+// Clinical workflow persistence. Real patient, queue, lab, prescription,
+// pharmacy, and records data lives in Supabase/Postgres tables with RLS.
+// Browser storage is intentionally not used for clinical workflows.
 // =====================================================================
-
-const KEY_LAB_ORDERS = "mediflow.labOrders";
-const KEY_PATIENT_QUEUE = "mediflow.patientQueue";
-const KEY_PRESCRIPTIONS = "mediflow.prescriptions";
-const LAB_ORDERS_EVENT = "mediflow.labOrders.changed";
-const PATIENT_QUEUE_EVENT = "mediflow.patientQueue.changed";
-const PRESCRIPTIONS_EVENT = "mediflow.prescriptions.changed";
 
 export type LabOrderStatus = "pending" | "sample_collected" | "processing" | "report_uploaded";
 export type PatientQueueStatus =
@@ -596,84 +588,401 @@ export interface PrescriptionOrder {
   dispensedByName?: string;
 }
 
-function read<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  if (IS_PRODUCTION) return fallback;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
+interface ClinicalQuery<T = unknown> extends PromiseLike<{
+  data: T;
+  error: { message: string } | null;
+}> {
+  select(columns?: string): ClinicalQuery<T>;
+  insert(values: unknown): ClinicalQuery<T>;
+  update(values: unknown): ClinicalQuery<T>;
+  upsert(values: unknown, options?: unknown): ClinicalQuery<T>;
+  eq(column: string, value: unknown): ClinicalQuery<T>;
+  order(column: string, options?: unknown): ClinicalQuery<T>;
+  maybeSingle(): Promise<{ data: T | null; error: { message: string } | null }>;
+  single(): Promise<{ data: T; error: { message: string } | null }>;
+}
+
+type DbClient = typeof supabase & {
+  from: (table: string) => ClinicalQuery;
+  channel: typeof supabase.channel;
+};
+
+interface PatientNested {
+  display_id?: string;
+  full_name?: string;
+  age?: number;
+  gender?: string;
+  mobile?: string | null;
+}
+
+interface VitalNested {
+  bp?: string | null;
+  pulse?: string | null;
+  temp?: string | null;
+  spo2?: string | null;
+  weight?: string | null;
+  rr?: string | null;
+}
+
+interface EncounterRow {
+  id: string;
+  display_id: string;
+  complaint?: string | null;
+  symptoms?: string | null;
+  previous_diseases?: string | null;
+  status: PatientQueueStatus;
+  allergies?: string | null;
+  history?: string | null;
+  assigned_to?: string | null;
+  assigned_doctor_id?: string | null;
+  assigned_specialty?: string | null;
+  created_at?: string | null;
+  created_by_id?: string | null;
+  created_by_name?: string | null;
+  patients?: PatientNested | PatientNested[] | null;
+  vitals?: VitalNested | VitalNested[] | null;
+}
+
+interface LabResultNested {
+  summary?: string | null;
+  completed_at?: string | null;
+  uploaded_by_id?: string | null;
+  uploaded_by_name?: string | null;
+}
+
+interface LabOrderRow {
+  id: string;
+  display_id: string;
+  test: string;
+  priority: LabOrder["priority"];
+  status: LabOrderStatus;
+  ordered_at?: string | null;
+  ordered_by_id?: string | null;
+  ordered_by_name?: string | null;
+  patient_id?: string;
+  encounter_id?: string;
+  patients?: PatientNested | PatientNested[] | null;
+  lab_results?: LabResultNested | LabResultNested[] | null;
+}
+
+interface PrescriptionRow {
+  id: string;
+  display_id: string;
+  items: unknown;
+  status: PrescriptionOrder["status"];
+  ordered_at?: string | null;
+  ordered_by_id?: string | null;
+  ordered_by_name?: string | null;
+  dispensed_at?: string | null;
+  dispensed_by_id?: string | null;
+  dispensed_by_name?: string | null;
+  patients?: PatientNested | PatientNested[] | null;
+}
+
+const clinicalDb = supabase as DbClient;
+
+function ms(value: string | null | undefined): number {
+  return value ? new Date(value).getTime() : Date.now();
+}
+
+function iso(value: number | undefined): string | undefined {
+  return value ? new Date(value).toISOString() : undefined;
+}
+
+function nestedOne<T>(value: T | T[] | null | undefined): T | undefined {
+  return Array.isArray(value) ? value[0] : (value ?? undefined);
+}
+
+async function auditClinicalEvent(input: {
+  hospitalId: string;
+  eventType: string;
+  entityTable: string;
+  entityId?: string;
+  details?: Record<string, unknown>;
+}) {
+  const user = currentUser();
+  const { error } = await clinicalDb.from("audit_events").insert({
+    hospital_id: input.hospitalId,
+    actor_id: user?.id ?? null,
+    actor_role: user?.role ?? null,
+    event_type: input.eventType,
+    entity_table: input.entityTable,
+    entity_id: input.entityId ?? null,
+    details: input.details ?? {},
+  });
+  if (error) {
+    console.warn("Audit event was not recorded", error.message);
   }
 }
-function write<T>(key: string, val: T) {
-  if (typeof window === "undefined") return;
-  blockClinicalBrowserStorage(`write ${key}`);
-  localStorage.setItem(key, JSON.stringify(val));
+
+async function resolveEncounter(hospitalId: string, displayId: string) {
+  const { data, error } = await clinicalDb
+    .from("encounters")
+    .select("id, patient_id, patients(display_id, full_name)")
+    .eq("hospital_id", hospitalId)
+    .eq("display_id", displayId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Patient encounter was not found.");
+  return data as {
+    id: string;
+    patient_id: string;
+    patients?:
+      | { display_id?: string; full_name?: string }
+      | { display_id?: string; full_name?: string }[];
+  };
 }
 
-function savePatientQueue(queue: PatientQueueRecord[]) {
-  write(KEY_PATIENT_QUEUE, queue);
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PATIENT_QUEUE_EVENT));
+function encounterRowToQueueRecord(row: EncounterRow, hospitalCode: string): PatientQueueRecord {
+  const patient = nestedOne(row.patients);
+  const vital = nestedOne(row.vitals);
+
+  return {
+    id: row.display_id,
+    hospitalCode,
+    name: patient?.full_name ?? "",
+    age: patient?.age ?? 0,
+    gender: patient?.gender ?? "",
+    mobile: patient?.mobile ?? undefined,
+    complaint: row.complaint ?? "",
+    symptoms: row.symptoms ?? undefined,
+    previousDiseases: row.previous_diseases ?? undefined,
+    status: row.status,
+    bp: vital?.bp ?? undefined,
+    pulse: vital?.pulse ?? undefined,
+    temp: vital?.temp ?? undefined,
+    spo2: vital?.spo2 ?? undefined,
+    weight: vital?.weight ?? undefined,
+    rr: vital?.rr ?? undefined,
+    allergies: row.allergies ?? undefined,
+    history: row.history ?? undefined,
+    assignedTo: row.assigned_to ?? undefined,
+    assignedDoctorId: row.assigned_doctor_id ?? undefined,
+    assignedSpecialty: row.assigned_specialty ?? undefined,
+    createdAt: ms(row.created_at),
+    createdById: row.created_by_id ?? undefined,
+    createdByName: row.created_by_name ?? undefined,
+  };
 }
 
-export function getPatientQueue(hospitalCode: string): PatientQueueRecord[] {
+export async function getPatientQueue(hospitalCode: string): Promise<PatientQueueRecord[]> {
   if (!hospitalCode) return [];
-  const all = read<PatientQueueRecord[]>(KEY_PATIENT_QUEUE, []);
-  return all.filter((p) => p.hospitalCode === hospitalCode);
+  const hospital = await verifyHospitalCode(hospitalCode);
+  const { data, error } = await clinicalDb
+    .from("encounters")
+    .select("*, patients(*), vitals(*)")
+    .eq("hospital_id", hospital.id)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as EncounterRow[]).map((row) =>
+    encounterRowToQueueRecord(row, hospital.code),
+  );
 }
 
-export function addPatientToQueue(
+export async function addPatientToQueue(
   input: Omit<PatientQueueRecord, "createdAt" | "status"> & { status?: PatientQueueStatus },
-) {
-  blockClinicalBrowserStorage("add patient queue record");
-  const all = read<PatientQueueRecord[]>(KEY_PATIENT_QUEUE, []);
+): Promise<PatientQueueRecord> {
   const record: PatientQueueRecord = {
     ...input,
     status: input.status ?? "waiting_for_doctor",
     createdAt: Date.now(),
   };
-  savePatientQueue([record, ...all]);
+  const hospital = await verifyHospitalCode(input.hospitalCode);
+  const { data: patient, error: patientError } = await clinicalDb
+    .from("patients")
+    .insert({
+      hospital_id: hospital.id,
+      display_id: input.id,
+      full_name: input.name.trim(),
+      age: input.age,
+      gender: input.gender,
+      mobile: input.mobile ?? null,
+      created_by_id: input.createdById ?? null,
+      created_by_name: input.createdByName ?? null,
+    })
+    .select("id")
+    .single();
+  if (patientError) throw new Error(patientError.message);
+
+  const { data: encounter, error: encounterError } = await clinicalDb
+    .from("encounters")
+    .insert({
+      hospital_id: hospital.id,
+      patient_id: patient.id,
+      display_id: input.id,
+      complaint: input.complaint,
+      symptoms: input.symptoms ?? null,
+      previous_diseases: input.previousDiseases ?? null,
+      status: record.status,
+      allergies: input.allergies ?? null,
+      history: input.history ?? input.previousDiseases ?? null,
+      assigned_to: input.assignedTo ?? null,
+      assigned_doctor_id: input.assignedDoctorId ?? null,
+      assigned_specialty: input.assignedSpecialty ?? null,
+      created_by_id: input.createdById ?? null,
+      created_by_name: input.createdByName ?? null,
+    })
+    .select("id")
+    .single();
+  if (encounterError) throw new Error(encounterError.message);
+
+  if (input.bp || input.pulse || input.temp || input.spo2 || input.weight || input.rr) {
+    const { error: vitalsError } = await clinicalDb.from("vitals").insert({
+      hospital_id: hospital.id,
+      patient_id: patient.id,
+      encounter_id: encounter.id,
+      bp: input.bp ?? null,
+      pulse: input.pulse ?? null,
+      temp: input.temp ?? null,
+      spo2: input.spo2 ?? null,
+      weight: input.weight ?? null,
+      rr: input.rr ?? null,
+      recorded_by_id: input.createdById ?? null,
+      recorded_by_name: input.createdByName ?? null,
+    });
+    if (vitalsError) throw new Error(vitalsError.message);
+  }
+
+  await auditClinicalEvent({
+    hospitalId: hospital.id,
+    eventType: "patient_intake_created",
+    entityTable: "encounters",
+    entityId: encounter.id,
+    details: { display_id: input.id },
+  });
   return record;
 }
 
-export function updatePatientQueueRecord(
+export async function updatePatientQueueRecord(
   hospitalCode: string,
   id: string,
   patch: Partial<PatientQueueRecord>,
-) {
-  blockClinicalBrowserStorage("update patient queue record");
-  const all = read<PatientQueueRecord[]>(KEY_PATIENT_QUEUE, []);
-  savePatientQueue(
-    all.map((p) => (p.hospitalCode === hospitalCode && p.id === id ? { ...p, ...patch } : p)),
-  );
+): Promise<void> {
+  const hospital = await verifyHospitalCode(hospitalCode);
+  const encounter = await resolveEncounter(hospital.id, id);
+  const encounterPatch: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+  if (patch.complaint !== undefined) encounterPatch.complaint = patch.complaint;
+  if (patch.symptoms !== undefined) encounterPatch.symptoms = patch.symptoms;
+  if (patch.previousDiseases !== undefined)
+    encounterPatch.previous_diseases = patch.previousDiseases;
+  if (patch.status !== undefined) encounterPatch.status = patch.status;
+  if (patch.allergies !== undefined) encounterPatch.allergies = patch.allergies;
+  if (patch.history !== undefined) encounterPatch.history = patch.history;
+  if (patch.assignedTo !== undefined) encounterPatch.assigned_to = patch.assignedTo;
+  if (patch.assignedDoctorId !== undefined)
+    encounterPatch.assigned_doctor_id = patch.assignedDoctorId;
+  if (patch.assignedSpecialty !== undefined)
+    encounterPatch.assigned_specialty = patch.assignedSpecialty;
+
+  const { error } = await clinicalDb
+    .from("encounters")
+    .update(encounterPatch)
+    .eq("hospital_id", hospital.id)
+    .eq("display_id", id);
+  if (error) throw new Error(error.message);
+
+  if (
+    patch.name !== undefined ||
+    patch.age !== undefined ||
+    patch.gender !== undefined ||
+    patch.mobile !== undefined
+  ) {
+    const patientPatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (patch.name !== undefined) patientPatch.full_name = patch.name;
+    if (patch.age !== undefined) patientPatch.age = patch.age;
+    if (patch.gender !== undefined) patientPatch.gender = patch.gender;
+    if (patch.mobile !== undefined) patientPatch.mobile = patch.mobile;
+    const { error: patientError } = await clinicalDb
+      .from("patients")
+      .update(patientPatch)
+      .eq("hospital_id", hospital.id)
+      .eq("id", encounter.patient_id);
+    if (patientError) throw new Error(patientError.message);
+  }
+
+  if (
+    patch.bp !== undefined ||
+    patch.pulse !== undefined ||
+    patch.temp !== undefined ||
+    patch.spo2 !== undefined ||
+    patch.weight !== undefined ||
+    patch.rr !== undefined
+  ) {
+    const user = currentUser();
+    const { error: vitalsError } = await clinicalDb.from("vitals").insert({
+      hospital_id: hospital.id,
+      patient_id: encounter.patient_id,
+      encounter_id: encounter.id,
+      bp: patch.bp ?? null,
+      pulse: patch.pulse ?? null,
+      temp: patch.temp ?? null,
+      spo2: patch.spo2 ?? null,
+      weight: patch.weight ?? null,
+      rr: patch.rr ?? null,
+      recorded_by_id: user?.id ?? null,
+      recorded_by_name: user?.fullName ?? null,
+    });
+    if (vitalsError) throw new Error(vitalsError.message);
+  }
+
+  await auditClinicalEvent({
+    hospitalId: hospital.id,
+    eventType: "encounter_updated",
+    entityTable: "encounters",
+    entityId: encounter.id,
+    details: { display_id: id, fields: Object.keys(patch) },
+  });
 }
 
 export function subscribePatientQueue(listener: () => void) {
   if (typeof window === "undefined") return () => {};
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === KEY_PATIENT_QUEUE) listener();
-  };
-  window.addEventListener(PATIENT_QUEUE_EVENT, listener);
-  window.addEventListener("storage", onStorage);
+  const channel = supabase
+    .channel("clinical-patient-queue")
+    .on("postgres_changes", { event: "*", schema: "public", table: "encounters" }, listener)
+    .on("postgres_changes", { event: "*", schema: "public", table: "patients" }, listener)
+    .on("postgres_changes", { event: "*", schema: "public", table: "vitals" }, listener)
+    .subscribe();
   return () => {
-    window.removeEventListener(PATIENT_QUEUE_EVENT, listener);
-    window.removeEventListener("storage", onStorage);
+    void supabase.removeChannel(channel);
   };
 }
 
-function saveLabOrders(orders: LabOrder[]) {
-  write(KEY_LAB_ORDERS, orders);
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(LAB_ORDERS_EVENT));
+function labOrderRowToRecord(row: LabOrderRow, hospitalCode: string): LabOrder {
+  const patient = nestedOne(row.patients);
+  const result = nestedOne(row.lab_results);
+  return {
+    id: row.display_id,
+    hospitalCode,
+    patientId: patient?.display_id ?? "",
+    patient: patient?.full_name ?? "",
+    test: row.test,
+    priority: row.priority,
+    status: row.status,
+    summary: result?.summary ?? undefined,
+    completedAt: result?.completed_at ? ms(result.completed_at) : undefined,
+    orderedAt: ms(row.ordered_at),
+    orderedById: row.ordered_by_id ?? undefined,
+    orderedByName: row.ordered_by_name ?? undefined,
+    uploadedById: result?.uploaded_by_id ?? undefined,
+    uploadedByName: result?.uploaded_by_name ?? undefined,
+  };
 }
 
-export function getLabOrders(hospitalCode: string): LabOrder[] {
+export async function getLabOrders(hospitalCode: string): Promise<LabOrder[]> {
   if (!hospitalCode) return [];
-  const all = read<LabOrder[]>(KEY_LAB_ORDERS, []);
-  return all.filter((o) => o.hospitalCode === hospitalCode);
+  const hospital = await verifyHospitalCode(hospitalCode);
+  const { data, error } = await clinicalDb
+    .from("lab_orders")
+    .select("*, patients(display_id, full_name), lab_results(*)")
+    .eq("hospital_id", hospital.id)
+    .order("ordered_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as LabOrderRow[]).map((row) => labOrderRowToRecord(row, hospital.code));
 }
 
-export function addLabOrdersForPatient(input: {
+export async function addLabOrdersForPatient(input: {
   hospitalCode: string;
   patientId: string;
   patient: string;
@@ -681,107 +990,209 @@ export function addLabOrdersForPatient(input: {
   priority?: LabOrder["priority"];
   orderedById?: string;
   orderedByName?: string;
-}) {
-  blockClinicalBrowserStorage("add lab order");
-  const all = read<LabOrder[]>(KEY_LAB_ORDERS, []);
+}): Promise<LabOrder[]> {
+  const hospital = await verifyHospitalCode(input.hospitalCode);
+  const encounter = await resolveEncounter(hospital.id, input.patientId);
   const now = Date.now();
-  const newOrders = input.tests.map(
-    (test, index): LabOrder => ({
-      id: `L-${Math.floor(100 + Math.random() * 900)}-${now.toString(36)}-${index + 1}`,
-      hospitalCode: input.hospitalCode,
-      patientId: input.patientId,
-      patient: input.patient,
-      test,
-      priority: input.priority ?? "Routine",
-      status: "pending",
-      orderedAt: now,
-      orderedById: input.orderedById,
-      orderedByName: input.orderedByName,
-    }),
-  );
-  saveLabOrders([...newOrders, ...all]);
-  return newOrders;
+  const rows = input.tests.map((test, index) => ({
+    hospital_id: hospital.id,
+    patient_id: encounter.patient_id,
+    encounter_id: encounter.id,
+    display_id: `L-${Math.floor(100 + Math.random() * 900)}-${now.toString(36)}-${index + 1}`,
+    test,
+    priority: input.priority ?? "Routine",
+    status: "pending",
+    ordered_by_id: input.orderedById ?? null,
+    ordered_by_name: input.orderedByName ?? null,
+    ordered_at: new Date(now).toISOString(),
+  }));
+  const { data, error } = await clinicalDb
+    .from("lab_orders")
+    .insert(rows)
+    .select("*, patients(display_id, full_name), lab_results(*)");
+  if (error) throw new Error(error.message);
+  await auditClinicalEvent({
+    hospitalId: hospital.id,
+    eventType: "lab_orders_created",
+    entityTable: "lab_orders",
+    details: { patient_display_id: input.patientId, count: rows.length },
+  });
+  return ((data ?? []) as LabOrderRow[]).map((row) => labOrderRowToRecord(row, hospital.code));
 }
 
-export function updateLabOrder(hospitalCode: string, id: string, patch: Partial<LabOrder>) {
-  blockClinicalBrowserStorage("update lab order or result");
-  const all = read<LabOrder[]>(KEY_LAB_ORDERS, []);
-  saveLabOrders(
-    all.map((o) => (o.hospitalCode === hospitalCode && o.id === id ? { ...o, ...patch } : o)),
-  );
+export async function updateLabOrder(
+  hospitalCode: string,
+  id: string,
+  patch: Partial<LabOrder>,
+): Promise<void> {
+  const hospital = await verifyHospitalCode(hospitalCode);
+  const { data: order, error: orderLookupError } = await clinicalDb
+    .from("lab_orders")
+    .select("id, patient_id, encounter_id")
+    .eq("hospital_id", hospital.id)
+    .eq("display_id", id)
+    .maybeSingle();
+  if (orderLookupError) throw new Error(orderLookupError.message);
+  if (!order) throw new Error("Lab order was not found.");
+
+  const orderPatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.status !== undefined) orderPatch.status = patch.status;
+  if (patch.priority !== undefined) orderPatch.priority = patch.priority;
+  if (patch.test !== undefined) orderPatch.test = patch.test;
+  const { error } = await clinicalDb
+    .from("lab_orders")
+    .update(orderPatch)
+    .eq("hospital_id", hospital.id)
+    .eq("display_id", id);
+  if (error) throw new Error(error.message);
+
+  if (
+    patch.summary !== undefined ||
+    patch.completedAt !== undefined ||
+    patch.uploadedById !== undefined
+  ) {
+    const { error: resultError } = await clinicalDb.from("lab_results").upsert(
+      {
+        hospital_id: hospital.id,
+        lab_order_id: order.id,
+        patient_id: order.patient_id,
+        encounter_id: order.encounter_id,
+        summary: patch.summary ?? "",
+        uploaded_by_id: patch.uploadedById ?? null,
+        uploaded_by_name: patch.uploadedByName ?? null,
+        completed_at: iso(patch.completedAt) ?? new Date().toISOString(),
+      },
+      { onConflict: "lab_order_id" },
+    );
+    if (resultError) throw new Error(resultError.message);
+  }
+
+  await auditClinicalEvent({
+    hospitalId: hospital.id,
+    eventType: "lab_order_updated",
+    entityTable: "lab_orders",
+    entityId: order.id,
+    details: { display_id: id, fields: Object.keys(patch) },
+  });
 }
 
 export function subscribeLabOrders(listener: () => void) {
   if (typeof window === "undefined") return () => {};
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === KEY_LAB_ORDERS) listener();
-  };
-  window.addEventListener(LAB_ORDERS_EVENT, listener);
-  window.addEventListener("storage", onStorage);
+  const channel = supabase
+    .channel("clinical-lab-orders")
+    .on("postgres_changes", { event: "*", schema: "public", table: "lab_orders" }, listener)
+    .on("postgres_changes", { event: "*", schema: "public", table: "lab_results" }, listener)
+    .subscribe();
   return () => {
-    window.removeEventListener(LAB_ORDERS_EVENT, listener);
-    window.removeEventListener("storage", onStorage);
+    void supabase.removeChannel(channel);
   };
 }
 
-function savePrescriptions(orders: PrescriptionOrder[]) {
-  write(KEY_PRESCRIPTIONS, orders);
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PRESCRIPTIONS_EVENT));
+function prescriptionRowToRecord(row: PrescriptionRow, hospitalCode: string): PrescriptionOrder {
+  const patient = nestedOne(row.patients);
+  return {
+    id: row.display_id,
+    hospitalCode,
+    patientId: patient?.display_id ?? "",
+    patient: patient?.full_name ?? "",
+    items: Array.isArray(row.items) ? row.items : [],
+    status: row.status,
+    orderedAt: ms(row.ordered_at),
+    orderedById: row.ordered_by_id ?? undefined,
+    orderedByName: row.ordered_by_name ?? undefined,
+    dispensedAt: row.dispensed_at ? ms(row.dispensed_at) : undefined,
+    dispensedById: row.dispensed_by_id ?? undefined,
+    dispensedByName: row.dispensed_by_name ?? undefined,
+  };
 }
 
-export function getPrescriptionOrders(hospitalCode: string): PrescriptionOrder[] {
+export async function getPrescriptionOrders(hospitalCode: string): Promise<PrescriptionOrder[]> {
   if (!hospitalCode) return [];
-  const all = read<PrescriptionOrder[]>(KEY_PRESCRIPTIONS, []);
-  return all.filter((o) => o.hospitalCode === hospitalCode);
+  const hospital = await verifyHospitalCode(hospitalCode);
+  const { data, error } = await clinicalDb
+    .from("prescriptions")
+    .select("*, patients(display_id, full_name)")
+    .eq("hospital_id", hospital.id)
+    .order("ordered_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as PrescriptionRow[]).map((row) =>
+    prescriptionRowToRecord(row, hospital.code),
+  );
 }
 
-export function addPrescriptionForPatient(input: {
+export async function addPrescriptionForPatient(input: {
   hospitalCode: string;
   patientId: string;
   patient: string;
   items: PrescriptionItem[];
   orderedById?: string;
   orderedByName?: string;
-}) {
-  blockClinicalBrowserStorage("add prescription");
-  const all = read<PrescriptionOrder[]>(KEY_PRESCRIPTIONS, []);
+}): Promise<PrescriptionOrder> {
+  const hospital = await verifyHospitalCode(input.hospitalCode);
+  const encounter = await resolveEncounter(hospital.id, input.patientId);
   const now = Date.now();
-  const order: PrescriptionOrder = {
-    id: `RX-${Math.floor(100 + Math.random() * 900)}-${now.toString(36)}`,
-    hospitalCode: input.hospitalCode,
-    patientId: input.patientId,
-    patient: input.patient,
-    items: input.items,
-    status: "pending",
-    orderedAt: now,
-    orderedById: input.orderedById,
-    orderedByName: input.orderedByName,
-  };
-  savePrescriptions([order, ...all]);
-  return order;
+  const { data, error } = await clinicalDb
+    .from("prescriptions")
+    .insert({
+      hospital_id: hospital.id,
+      patient_id: encounter.patient_id,
+      encounter_id: encounter.id,
+      display_id: `RX-${Math.floor(100 + Math.random() * 900)}-${now.toString(36)}`,
+      items: input.items,
+      status: "pending",
+      ordered_by_id: input.orderedById ?? null,
+      ordered_by_name: input.orderedByName ?? null,
+      ordered_at: new Date(now).toISOString(),
+    })
+    .select("*, patients(display_id, full_name)")
+    .single();
+  if (error) throw new Error(error.message);
+  await auditClinicalEvent({
+    hospitalId: hospital.id,
+    eventType: "prescription_created",
+    entityTable: "prescriptions",
+    entityId: data.id,
+    details: { patient_display_id: input.patientId, item_count: input.items.length },
+  });
+  return prescriptionRowToRecord(data, hospital.code);
 }
 
-export function updatePrescriptionOrder(
+export async function updatePrescriptionOrder(
   hospitalCode: string,
   id: string,
   patch: Partial<PrescriptionOrder>,
-) {
-  blockClinicalBrowserStorage("update prescription or pharmacy status");
-  const all = read<PrescriptionOrder[]>(KEY_PRESCRIPTIONS, []);
-  savePrescriptions(
-    all.map((o) => (o.hospitalCode === hospitalCode && o.id === id ? { ...o, ...patch } : o)),
-  );
+): Promise<void> {
+  const hospital = await verifyHospitalCode(hospitalCode);
+  const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.items !== undefined) update.items = patch.items;
+  if (patch.status !== undefined) update.status = patch.status;
+  if (patch.dispensedAt !== undefined) update.dispensed_at = iso(patch.dispensedAt);
+  if (patch.dispensedById !== undefined) update.dispensed_by_id = patch.dispensedById;
+  if (patch.dispensedByName !== undefined) update.dispensed_by_name = patch.dispensedByName;
+  const { data, error } = await clinicalDb
+    .from("prescriptions")
+    .update(update)
+    .eq("hospital_id", hospital.id)
+    .eq("display_id", id)
+    .select("id")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  await auditClinicalEvent({
+    hospitalId: hospital.id,
+    eventType: "prescription_updated",
+    entityTable: "prescriptions",
+    entityId: data?.id,
+    details: { display_id: id, fields: Object.keys(patch) },
+  });
 }
 
 export function subscribePrescriptionOrders(listener: () => void) {
   if (typeof window === "undefined") return () => {};
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === KEY_PRESCRIPTIONS) listener();
-  };
-  window.addEventListener(PRESCRIPTIONS_EVENT, listener);
-  window.addEventListener("storage", onStorage);
+  const channel = supabase
+    .channel("clinical-prescriptions")
+    .on("postgres_changes", { event: "*", schema: "public", table: "prescriptions" }, listener)
+    .subscribe();
   return () => {
-    window.removeEventListener(PRESCRIPTIONS_EVENT, listener);
-    window.removeEventListener("storage", onStorage);
+    void supabase.removeChannel(channel);
   };
 }

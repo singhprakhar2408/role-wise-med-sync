@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import {
   currentUser,
@@ -21,9 +21,41 @@ function Records() {
   const canSeeNotes =
     user?.role === "doctor" || user?.role === "hospital_admin" || user?.role === "super_admin";
   const hospitalCode = user?.hospitalCode ?? "";
-  const records = hospitalCode ? getPatientQueue(hospitalCode) : [];
-  const labOrders = hospitalCode ? getLabOrders(hospitalCode) : [];
-  const prescriptions = hospitalCode ? getPrescriptionOrders(hospitalCode) : [];
+  const [records, setRecords] = useState<PatientQueueRecord[]>([]);
+  const [labOrders, setLabOrders] = useState<Awaited<ReturnType<typeof getLabOrders>>>([]);
+  const [prescriptions, setPrescriptions] = useState<
+    Awaited<ReturnType<typeof getPrescriptionOrders>>
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!hospitalCode) {
+      setRecords([]);
+      setLabOrders([]);
+      setPrescriptions([]);
+      return;
+    }
+    Promise.all([
+      getPatientQueue(hospitalCode),
+      getLabOrders(hospitalCode),
+      getPrescriptionOrders(hospitalCode),
+    ])
+      .then(([recordRows, labRows, prescriptionRows]) => {
+        if (cancelled) return;
+        setRecords(recordRows);
+        setLabOrders(labRows);
+        setPrescriptions(prescriptionRows);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRecords([]);
+        setLabOrders([]);
+        setPrescriptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hospitalCode]);
 
   const list = records.filter(
     (p) =>

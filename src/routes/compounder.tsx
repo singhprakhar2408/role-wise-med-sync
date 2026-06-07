@@ -64,7 +64,7 @@ function Compounder() {
 
   const reset = () => setF({ ...empty, id: nextId(), doctorId: doctors[0]?.id ?? "" });
 
-  const send = () => {
+  const send = async () => {
     if (!user) return;
     if (!f.name.trim()) {
       toast.error("Patient name is required");
@@ -86,32 +86,36 @@ function Compounder() {
       assignedSpecialty = f.specialty;
       assignedTo = `Specialty queue · ${f.specialty}`;
     }
-    addPatientToQueue({
-      id: f.id,
-      hospitalCode: user.hospitalCode,
-      name: f.name.trim(),
-      age: Number(f.age) || 0,
-      gender: f.gender,
-      mobile: f.mobile,
-      complaint: f.complaint,
-      symptoms: f.symptoms,
-      previousDiseases: f.previousDiseases,
-      history: f.previousDiseases,
-      bp: f.bp,
-      pulse: f.pulse,
-      temp: f.temp,
-      spo2: f.spo2,
-      weight: f.weight,
-      rr: f.rr,
-      assignedTo,
-      assignedDoctorId,
-      assignedSpecialty,
-      createdById: user.id,
-      createdByName: user.fullName,
-    });
-    setQueue((q) => [{ ...f, assignedTo }, ...q]);
-    toast.success("Sent to doctor", { description: `${f.name} (#${f.id}) → ${assignedTo}` });
-    reset();
+    try {
+      await addPatientToQueue({
+        id: f.id,
+        hospitalCode: user.hospitalCode,
+        name: f.name.trim(),
+        age: Number(f.age) || 0,
+        gender: f.gender,
+        mobile: f.mobile,
+        complaint: f.complaint,
+        symptoms: f.symptoms,
+        previousDiseases: f.previousDiseases,
+        history: f.previousDiseases,
+        bp: f.bp,
+        pulse: f.pulse,
+        temp: f.temp,
+        spo2: f.spo2,
+        weight: f.weight,
+        rr: f.rr,
+        assignedTo,
+        assignedDoctorId,
+        assignedSpecialty,
+        createdById: user.id,
+        createdByName: user.fullName,
+      });
+      setQueue((q) => [{ ...f, assignedTo }, ...q]);
+      toast.success("Sent to doctor", { description: `${f.name} (#${f.id}) → ${assignedTo}` });
+      reset();
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
   };
 
   return (
