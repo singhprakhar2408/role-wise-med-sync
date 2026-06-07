@@ -8,5 +8,7 @@ Disallow: /records
 Disallow: /staff-requests
 Disallow: /lab
 Disallow: /pharmacy
+Disallow: /doctor
+Disallow: /compounder
 
-Sitemap: https://YOUR_DOMAIN_HERE/sitemap.xml
+Sitemap: https://role-wise-med-sync.vercel.app/sitemap.xml
