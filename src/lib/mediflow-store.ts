@@ -74,7 +74,6 @@ export interface StaffAccount {
 
 const PROFILE_CACHE_KEY = "mediflow.profile";
 const HOSPITAL_CACHE_KEY = "mediflow.hospitalCache";
-const OTP_CHANNEL = "sms" as const;
 const IS_PRODUCTION = import.meta.env.PROD;
 
 export function blockClinicalBrowserStorage(action: string) {
@@ -86,9 +85,15 @@ export function blockClinicalBrowserStorage(action: string) {
 }
 
 export function normalizeMobile(mobile: string): string {
-  const normalized = mobile.replace(/[\s()-]/g, "").trim();
+  const trimmed = mobile.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  const normalized = trimmed.startsWith("+")
+    ? `+${digits}`
+    : digits.length === 10
+      ? `+91${digits}`
+      : `+${digits}`;
   if (!/^\+[1-9]\d{7,14}$/.test(normalized)) {
-    throw new Error("Enter mobile in international format, for example +919876543210.");
+    throw new Error("Enter a valid mobile number, for example 9876543210 or +919876543210.");
   }
   return normalized;
 }
@@ -241,28 +246,30 @@ export async function loginStaff(
 
 export async function sendMobileLoginOtp(hospitalCode: string, mobile: string): Promise<string> {
   await verifyHospitalCode(hospitalCode);
-  const phone = normalizeMobile(mobile);
+  const normalizedPhone = normalizeMobile(mobile);
+  console.log("OTP send phone:", normalizedPhone);
   const { error } = await supabase.auth.signInWithOtp({
-    phone,
+    phone: normalizedPhone,
     options: {
-      shouldCreateUser: false,
-      channel: OTP_CHANNEL,
+      shouldCreateUser: true,
     },
   });
   if (error) throw new Error(error.message);
-  return phone;
+  return normalizedPhone;
 }
 
 export async function verifyMobileLoginOtp(
   hospitalCode: string,
   mobile: string,
-  token: string,
+  otp: string,
 ): Promise<StaffAccount> {
   const hospital = await verifyHospitalCode(hospitalCode);
-  const phone = normalizeMobile(mobile);
+  const normalizedPhone = normalizeMobile(mobile);
+  console.log("OTP verify phone:", normalizedPhone);
+  console.log("OTP length:", otp.trim().length);
   const { data, error } = await supabase.auth.verifyOtp({
-    phone,
-    token: token.trim(),
+    phone: normalizedPhone,
+    token: otp.trim(),
     type: "sms",
   });
   if (error || !data.user) throw new Error(error?.message || "Invalid or expired OTP.");
@@ -291,24 +298,25 @@ export async function resetPasswordWithMobileOtp(input: {
 }
 
 export async function sendRegistrationMobileOtp(mobile: string): Promise<string> {
-  const phone = normalizeMobile(mobile);
+  const normalizedPhone = normalizeMobile(mobile);
+  console.log("OTP send phone:", normalizedPhone);
   const { error } = await supabase.auth.signInWithOtp({
-    phone,
+    phone: normalizedPhone,
     options: {
       shouldCreateUser: true,
-      channel: OTP_CHANNEL,
-      data: { mediflow_registration: true },
     },
   });
   if (error) throw new Error(error.message);
-  return phone;
+  return normalizedPhone;
 }
 
-export async function verifyRegistrationMobileOtp(mobile: string, token: string): Promise<string> {
-  const phone = normalizeMobile(mobile);
+export async function verifyRegistrationMobileOtp(mobile: string, otp: string): Promise<string> {
+  const normalizedPhone = normalizeMobile(mobile);
+  console.log("OTP verify phone:", normalizedPhone);
+  console.log("OTP length:", otp.trim().length);
   const { data, error } = await supabase.auth.verifyOtp({
-    phone,
-    token: token.trim(),
+    phone: normalizedPhone,
+    token: otp.trim(),
     type: "sms",
   });
   if (error || !data.user) throw new Error(error?.message || "Invalid or expired OTP.");
@@ -322,7 +330,7 @@ export async function verifyRegistrationMobileOtp(mobile: string, token: string)
     await supabase.auth.signOut();
     throw new Error("This mobile number is already registered. Use mobile OTP sign-in instead.");
   }
-  return phone;
+  return normalizedPhone;
 }
 
 // --- Register ---

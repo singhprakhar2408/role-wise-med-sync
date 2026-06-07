@@ -255,9 +255,11 @@ function LoginForm({
   const [mobile, setMobile] = useState("");
   const [mobileOtp, setMobileOtp] = useState("");
   const [mobileOtpSent, setMobileOtpSent] = useState(false);
+  const [mobileOtpPhone, setMobileOtpPhone] = useState("");
   const [resetMobile, setResetMobile] = useState("");
   const [resetOtp, setResetOtp] = useState("");
   const [resetOtpSent, setResetOtpSent] = useState(false);
+  const [resetOtpPhone, setResetOtpPhone] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [err, setErr] = useState("");
@@ -283,6 +285,9 @@ function LoginForm({
     setLoading(true);
     try {
       const phone = await sendMobileLoginOtp(hospitalCode, mobile);
+      setMobile(phone);
+      setMobileOtpPhone(phone);
+      setMobileOtp("");
       setMobileOtpSent(true);
       setErr("");
       toast.success(`OTP sent to ${phone}`);
@@ -297,7 +302,7 @@ function LoginForm({
     e.preventDefault();
     setLoading(true);
     try {
-      const u = await verifyMobileLoginOtp(hospitalCode, mobile, mobileOtp);
+      const u = await verifyMobileLoginOtp(hospitalCode, mobileOtpPhone, mobileOtp);
       onDone(u.role);
     } catch (x: unknown) {
       setErr((x as Error).message);
@@ -310,6 +315,9 @@ function LoginForm({
     setLoading(true);
     try {
       const phone = await sendPasswordResetMobileOtp(hospitalCode, resetMobile);
+      setResetMobile(phone);
+      setResetOtpPhone(phone);
+      setResetOtp("");
       setResetOtpSent(true);
       setErr("");
       toast.success(`Password reset OTP sent to ${phone}`);
@@ -330,7 +338,7 @@ function LoginForm({
     try {
       const u = await resetPasswordWithMobileOtp({
         hospitalCode,
-        mobile: resetMobile,
+        mobile: resetOtpPhone,
         token: resetOtp,
         newPassword,
       });
@@ -481,7 +489,9 @@ function LoginForm({
                   value={mobile}
                   onChange={(e) => {
                     setMobile(e.target.value);
+                    setMobileOtpPhone("");
                     setMobileOtpSent(false);
+                    setMobileOtp("");
                     setErr("");
                   }}
                   placeholder="+919876543210"
@@ -516,7 +526,12 @@ function LoginForm({
               />
             </Field>
           )}
-          <LoginSubmit loading={loading} label="Verify and sign in" loadingLabel="Verifying..." />
+          <LoginSubmit
+            loading={loading}
+            disabled={!mobileOtpSent}
+            label="Verify and sign in"
+            loadingLabel="Verifying..."
+          />
         </form>
       )}
 
@@ -534,7 +549,9 @@ function LoginForm({
                   value={resetMobile}
                   onChange={(e) => {
                     setResetMobile(e.target.value);
+                    setResetOtpPhone("");
                     setResetOtpSent(false);
+                    setResetOtp("");
                     setErr("");
                   }}
                   placeholder="+919876543210"
@@ -598,7 +615,12 @@ function LoginForm({
               </Field>
             </>
           )}
-          <LoginSubmit loading={loading} label="Change password" loadingLabel="Changing..." />
+          <LoginSubmit
+            loading={loading}
+            disabled={!resetOtpSent}
+            label="Change password"
+            loadingLabel="Changing..."
+          />
         </form>
       )}
 
@@ -643,16 +665,18 @@ function AuthModeButton({
 
 function LoginSubmit({
   loading,
+  disabled = false,
   label,
   loadingLabel,
 }: {
   loading: boolean;
+  disabled?: boolean;
   label: string;
   loadingLabel: string;
 }) {
   return (
     <button
-      disabled={loading}
+      disabled={loading || disabled}
       className="btn-primary w-full rounded-xl px-4 py-3.5 font-semibold shadow-none disabled:opacity-60"
     >
       {loading ? loadingLabel : label}
@@ -683,6 +707,7 @@ function RegisterForm({
   const [err, setErr] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [otpInput, setOtpInput] = useState("");
+  const [otpPhone, setOtpPhone] = useState("");
   const [otpVerified, setOtpVerified] = useState(false);
   const [otpLoading, setOtpLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -691,6 +716,9 @@ function RegisterForm({
     setOtpLoading(true);
     try {
       const phone = await sendRegistrationMobileOtp(f.mobile);
+      setF((current) => ({ ...current, mobile: phone }));
+      setOtpPhone(phone);
+      setOtpInput("");
       setOtpSent(true);
       setErr("");
       toast.success(`OTP sent to ${phone}`);
@@ -701,9 +729,13 @@ function RegisterForm({
     }
   };
   const verifyOtp = async () => {
+    if (!otpPhone) {
+      setErr("Send OTP before verifying.");
+      return;
+    }
     setOtpLoading(true);
     try {
-      await verifyRegistrationMobileOtp(f.mobile, otpInput);
+      await verifyRegistrationMobileOtp(otpPhone, otpInput);
       setOtpVerified(true);
       setErr("");
       toast.success("Mobile verified");
@@ -781,6 +813,7 @@ function RegisterForm({
                 setF({ ...f, mobile: e.target.value });
                 setOtpVerified(false);
                 setOtpSent(false);
+                setOtpPhone("");
                 setOtpInput("");
               }}
               className="input flex-1"
@@ -814,7 +847,7 @@ function RegisterForm({
               <button
                 type="button"
                 onClick={verifyOtp}
-                disabled={otpLoading}
+                disabled={otpLoading || !otpPhone}
                 className="rounded-xl px-4 text-xs btn-primary disabled:opacity-60"
               >
                 {otpLoading ? "Verifying..." : "Verify"}
