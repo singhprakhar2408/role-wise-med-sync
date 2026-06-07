@@ -312,24 +312,14 @@ export async function sendRegistrationMobileOtp(mobile: string): Promise<string>
 
 export async function verifyRegistrationMobileOtp(mobile: string, otp: string): Promise<string> {
   const normalizedPhone = normalizeMobile(mobile);
-  console.log("OTP verify phone:", normalizedPhone);
-  console.log("OTP length:", otp.trim().length);
-  const { data, error } = await supabase.auth.verifyOtp({
+  console.log("OTP verifying registration phone:", normalizedPhone);
+  const { error } = await supabase.auth.verifyOtp({
     phone: normalizedPhone,
     token: otp.trim(),
     type: "sms",
   });
-  if (error || !data.user) throw new Error(error?.message || "Invalid or expired OTP.");
-  const { data: existing, error: profileError } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("id", data.user.id)
-    .maybeSingle();
-  if (profileError) throw new Error(profileError.message);
-  if (existing) {
-    await supabase.auth.signOut();
-    throw new Error("This mobile number is already registered. Use mobile OTP sign-in instead.");
-  }
+  if (error) throw new Error(error.message);
+  console.log("OTP verified registration phone:", normalizedPhone);
   return normalizedPhone;
 }
 

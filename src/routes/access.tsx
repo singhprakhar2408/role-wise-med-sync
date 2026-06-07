@@ -709,6 +709,7 @@ function RegisterForm({
   const [otpInput, setOtpInput] = useState("");
   const [otpPhone, setOtpPhone] = useState("");
   const [otpVerified, setOtpVerified] = useState(false);
+  const [verifiedMobile, setVerifiedMobile] = useState("");
   const [otpLoading, setOtpLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -735,8 +736,9 @@ function RegisterForm({
     }
     setOtpLoading(true);
     try {
-      await verifyRegistrationMobileOtp(otpPhone, otpInput);
+      const normalizedPhone = await verifyRegistrationMobileOtp(otpPhone, otpInput);
       setOtpVerified(true);
+      setVerifiedMobile(normalizedPhone);
       setErr("");
       toast.success("Mobile verified");
     } catch (x: unknown) {
@@ -754,6 +756,10 @@ function RegisterForm({
           setErr("Please verify your mobile via OTP first.");
           return;
         }
+        if (!verifiedMobile) {
+          setErr("Please verify your mobile via OTP first.");
+          return;
+        }
         if (f.password !== f.confirm) {
           setErr("Passwords do not match.");
           return;
@@ -763,6 +769,7 @@ function RegisterForm({
           const { specialty, ...base } = f;
           await registerStaff({
             ...base,
+            mobile: verifiedMobile,
             hospitalCode,
             ...(base.role === "doctor" ? { specialty } : {}),
           });
@@ -812,6 +819,7 @@ function RegisterForm({
               onChange={(e) => {
                 setF({ ...f, mobile: e.target.value });
                 setOtpVerified(false);
+                setVerifiedMobile("");
                 setOtpSent(false);
                 setOtpPhone("");
                 setOtpInput("");
