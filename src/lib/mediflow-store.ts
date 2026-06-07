@@ -343,46 +343,70 @@ export async function registerStaff(input: RegisterStaffInput): Promise<void> {
   assertStrongPassword(input.password);
   const hospital = await verifyHospitalCode(input.hospitalCode);
   const phone = normalizeMobile(input.mobile);
+  const email = input.email.trim();
+  const emailRedirectTo = `${window.location.origin}/access`;
   const { data: session } = await supabase.auth.getSession();
-  const user = session.session?.user;
-  if (!user) throw new Error("Verify your registered mobile before submitting.");
-  if (user.phone !== phone) {
-    throw new Error("Verified mobile does not match the registration mobile.");
+  let userId = session.session?.user.id;
+
+  if (session.session?.user.phone === phone) {
+    const { data: updated, error: updateErr } = await supabase.auth.updateUser(
+      {
+        email,
+        password: input.password,
+        data: {
+          full_name: input.fullName,
+          mobile: phone,
+        },
+      },
+      { emailRedirectTo },
+    );
+    if (updateErr) throw new Error(updateErr.message);
+    userId = updated.user?.id ?? userId;
+  } else {
+    if (session.session?.user) {
+      await supabase.auth.signOut();
+    }
+    const { data: signedUp, error: signUpErr } = await supabase.auth.signUp({
+      email,
+      password: input.password,
+      options: {
+        emailRedirectTo,
+        data: {
+          full_name: input.fullName,
+          mobile: phone,
+        },
+      },
+    });
+    if (signUpErr) throw new Error(signUpErr.message);
+    userId = signedUp.user?.id;
+
+    if (!signedUp.session) {
+      const { data: signedIn, error: signInErr } = await supabase.auth.signInWithPassword({
+        email,
+        password: input.password,
+      });
+      if (signInErr || !signedIn.user) {
+        throw new Error(
+          "Account created, but a registration session was not available. Confirm email or disable email confirmation for the demo, then try again.",
+        );
+      }
+      userId = signedIn.user.id;
+    }
   }
 
-  const { data: existing, error: existingErr } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (existingErr) throw new Error(existingErr.message);
-  if (existing) throw new Error("This staff account is already registered.");
-
-  const { error: updateErr } = await supabase.auth.updateUser(
-    {
-      email: input.email.trim(),
-      password: input.password,
-      data: {
-        full_name: input.fullName,
-        mobile: phone,
-      },
-    },
-    {
-      emailRedirectTo: `${window.location.origin}/access`,
-    },
-  );
-  if (updateErr) throw new Error(updateErr.message);
+  if (!userId) throw new Error("Unable to create staff auth account.");
 
   const { error: insErr } = await supabase.from("profiles").insert({
-    id: user.id,
+    id: userId,
     hospital_id: hospital.id,
     full_name: input.fullName,
-    email: input.email.trim(),
+    email,
     mobile: phone,
     role: input.role,
     department: input.department,
     specialty: input.specialty ?? null,
     license_no: input.licenseNo ?? null,
+    status: "pending",
   });
   await supabase.auth.signOut();
   if (insErr) throw new Error(insErr.message);

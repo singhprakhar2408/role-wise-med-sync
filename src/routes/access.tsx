@@ -741,8 +741,8 @@ function RegisterForm({
       setVerifiedMobile(normalizedPhone);
       setErr("");
       toast.success("Mobile verified");
-    } catch (x: unknown) {
-      setErr((x as Error).message);
+    } catch {
+      setErr("OTP verification is optional for now. You can still submit for admin approval.");
     } finally {
       setOtpLoading(false);
     }
@@ -752,14 +752,6 @@ function RegisterForm({
     <form
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!otpVerified) {
-          setErr("Please verify your mobile via OTP first.");
-          return;
-        }
-        if (!verifiedMobile) {
-          setErr("Please verify your mobile via OTP first.");
-          return;
-        }
         if (f.password !== f.confirm) {
           setErr("Passwords do not match.");
           return;
@@ -769,7 +761,7 @@ function RegisterForm({
           const { specialty, ...base } = f;
           await registerStaff({
             ...base,
-            mobile: verifiedMobile,
+            mobile: verifiedMobile || base.mobile,
             hospitalCode,
             ...(base.role === "doctor" ? { specialty } : {}),
           });
@@ -841,6 +833,9 @@ function RegisterForm({
                     : "Send OTP"}
             </button>
           </div>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+            Mobile OTP is optional during setup. Hospital admin will verify staff before approval.
+          </p>
         </Field>
         {otpSent && !otpVerified && (
           <Field label="Enter OTP" full>
